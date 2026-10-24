@@ -75,7 +75,12 @@ async function sessionFlow(project: Project, unassignedId: string): Promise<stri
   assert((await getConversation(unassignedId))?.projectId === project.id, 'existing session assigned');
   await workspace('click', { label: NAME });
   await workspace('click', { label: 'Sessions' });
+  await workspace('click', { label: 'New chat in this project' });
+  await waitForBody('Starting task');
   await workspace('click', { label: 'New session' });
+  assert(!(await workspace('read')).body.includes('Starting task'), 'new chat form collapsed');
+  await workspace('click', { label: 'New chat in this project' });
+  await waitForBody('Starting task');
   await workspace('fill', { label: 'Session title', text: 'New investigation session' });
   await workspace('fill', { label: 'Starting task', text: 'Inspect the fixture navigation.' });
   await workspace('fill', { label: 'Starting task', text: 'Inspect the fixture navigation.', submit: true });

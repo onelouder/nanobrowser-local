@@ -5,6 +5,7 @@ import { useStorage } from '@src/ui/hooks';
 import { setLanguage, t, useLanguage } from '@src/ui/i18n';
 import { applyTheme } from '@src/ui/theme';
 import type { MessageKey } from '@src/ui/i18n';
+import { FilesSection } from './FilesSection';
 import { GeneralSection } from './GeneralSection';
 import { ProvidersSection } from './ProvidersSection';
 import { PermissionsSection } from './PermissionsSection';
@@ -17,6 +18,7 @@ import { websiteUrl } from '@src/ui/links';
 
 const SECTIONS: Array<{ id: string; label: MessageKey; render: () => JSX.Element }> = [
   { id: 'general', label: 'settings.nav.general', render: () => <GeneralSection /> },
+  { id: 'files', label: 'localFiles.title', render: () => <FilesSection /> },
   { id: 'providers', label: 'settings.nav.providers', render: () => <ProvidersSection /> },
   { id: 'permissions', label: 'settings.nav.permissions', render: () => <PermissionsSection /> },
   { id: 'shortcuts', label: 'settings.nav.shortcuts', render: () => <ShortcutsSection /> },

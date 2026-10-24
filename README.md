@@ -9,6 +9,7 @@ This repository is **[onelouder/nanobrowser-local](https://github.com/onelouder/
 - **Editable inference limits:** context and output budgets per model, with a 150,000-token context default for the built-in ether-10 agent, max, and code profiles. Other profiles retain their own limits.
 - **Configurable concurrency:** four concurrent model requests per provider by default. The built-in ether-10 LAN and Tailscale connections share a queue because they reach the same backend.
 - **Run controls:** configurable turn, consecutive-error, and no-progress limits; pause and save; explicit resume review.
+- **Direct local files:** every chat can list, read, and write Downloads and Documents after one-time native helper setup. Projects and attachments are optional.
 - **Project workspace:** objectives, target sites, instructions, notes, existing/new sessions, files, evidence, checkpoints, and run history.
 - **Portable projects:** export/import project bundles with conversation history and retained files. Imported sessions require local model selection before running.
 - **PDF text extraction:** bundled PDF.js extracts text locally before the selected model receives it. CSS and common source/configuration files can also be attached as text.
@@ -42,11 +43,11 @@ If your Node installation does not include Corepack, install the pinned pnpm ver
 4. Pin Nanobrowser in the toolbar and click its icon to open the side panel.
 5. Open **Settings → Providers** and verify your model connection.
 
-`corepack pnpm zip` builds `dist-zip/nanobrowser-0.3.0.zip`. To install that package, extract it into a permanent directory and load the extracted folder containing `manifest.json` using **Load unpacked**. The ZIP is an unpacked-extension distribution artifact, not an automatic installer or updater.
+`corepack pnpm zip` builds `dist-zip/nanobrowser-0.3.1.zip`. To install that package, extract it into a permanent directory and load the extracted folder containing `manifest.json` using **Load unpacked**. The ZIP is an unpacked-extension distribution artifact, not an automatic installer or updater.
 
 ### Update an existing installation
 
-Export important projects first. Pull the latest source, run `corepack pnpm install --frozen-lockfile` and `corepack pnpm build`, then click **Reload** on the existing extension card. Keep the same installation directory and browser profile; removing the extension can delete its local data.
+Export important projects first. Pull the latest source, run `corepack pnpm install --frozen-lockfile` and `corepack pnpm build`, then click **Reload** on the existing extension card. Confirm **Settings → About** shows version **0.3.1**. If installing from a ZIP, replace the files in your existing installation directory with the extracted build before clicking Reload. Keep the same installation directory and browser profile; removing the extension can delete its local data.
 
 CI runs formatting, lint, type checking, unit tests, and builds on Ubuntu, macOS, and Windows. Native browser checks have also been run locally on Linux ARM64; CI does not run those browser checks.
 
@@ -78,17 +79,40 @@ Cloud providers remain optional. Voice input uses the configured OpenAI or Gemin
 - Context includes both prompt and output. Automatic compaction keeps long sessions within the budget and retains the user's messages.
 - Detected local-server limits can lower the effective context. The provider UI displays effective limits so you can check what will actually be used.
 
+## Use Downloads and Documents directly
+
+Click **Enable Downloads + Documents access** in chat, or open **Settings → Local files**. This works with existing, new, and resumed chats without creating a project or attaching files.
+
+1. With Node.js 24 installed, open a terminal in the repository or extracted extension folder.
+2. Run the setup command shown in Settings. It includes your extension's ID:
+
+   ```sh
+   node native-files/install.mjs --extension-id YOUR_EXTENSION_ID
+   ```
+
+3. Click **Connect file access** once to allow Chrome to communicate with the helper. The page shows the actual Downloads and Documents paths when connected.
+
+The helper supports Chrome, Chromium, and Edge on macOS, Windows, and Linux, including ARM64. It runs as your user, starts automatically for file operations, and remains registered after browser restarts. Keep the Node installation used during setup; rerun setup if Node moves or your extension ID changes. Managed or sandboxed browser installations may require their administrator's native messaging support.
+
+Then ask the chat directly:
+
+> Find the oculus-cleanroom Markdown files in Downloads, read them, and continue from 04-gaps.md. Save the website in Documents/oculus-site, including HTML, CSS, and JavaScript.
+
+The agent has `list_files`, `read_file`, `write_file`, and `create_directory` tools. File paths are relative to `downloads` or `documents`; files can have any extension. Reads are paged for larger files, and binary content can be read or written as base64. Writes are limited to 512 KiB per file operation. Ask mode confirms writes; Auto mode writes directly. Existing files require an explicit overwrite request. Access stays inside the two folders; symbolic links and hard-linked files are not followed. The helper does not execute files or expose a network service.
+
+Project organization remains available below, but is optional for local file access.
+
 ## Work in a project
 
 Click **Projects** in the side panel to open the full-page workspace.
 
 1. Create a project with an objective, target sites, and instructions. Project objectives and instructions are included in its sessions; notes remain in the workspace unless you share them.
-2. Create a session with a starting task, or move an existing chat from **Unassigned sessions** into the project. Creating a session does not start the agent; the first target site becomes its saved starting page.
+2. Click **New chat in this project** to create a session with a starting task, or select an **Existing chat** and click **Link existing chat**. A session is a saved chat; linking preserves its conversation history. Chats assigned to another project are moved into the selected project. Creating a session does not start the agent; the first target site becomes its saved starting page.
 3. Use **Open chat** to read and continue that session directly in the workspace. The **Chat** tab and browser side panel show the same conversation; **Open website and side-panel chat** switches to its website. Use **Review and resume** to inspect a saved run before continuing it.
 4. Use **Save recent evidence** to retain up to the latest 20 successful page captures from the active conversation branch. Evidence records its source URL and capture time when available.
 5. Search, preview, or download files from **Evidence** and **Files**. Select files, choose the session, and click **Add selected to session** to return to that chat with the files attached. They remain available when you send the next prompt; storing a file alone does not send it to the model.
 
-When you open **Projects** from an existing chat, its conversation is selected. To organize an unassigned chat, select or create a project and click **Move this conversation into this project**; the open side panel updates immediately. If a session’s website tab closes or moves to another conversation, use **Reconnect website** in the project chat before sending another message.
+The project selector remains available at the top of the side panel. Choose a project there to link the saved conversation directly, or choose **No project** to unlink it. Pause a running chat before changing its project. You can also open any project independently and use **Link existing chat**; opening Projects from the chat is not required. The workspace and open side panel update to show the same assignment. If a session’s website tab closes or moves to another conversation, use **Reconnect website** in the project chat before sending another message.
 
 For website investigation, separate sessions by task—for example navigation mapping, form behavior, responsive layout, and content structure—while keeping their evidence in one project. Shortcuts can hold recurring investigation prompts.
 
@@ -118,13 +142,15 @@ Provider connection profiles, stored API keys, live tab bindings, and pending ap
 
 PDF extraction reads embedded text; it does not perform OCR on scanned pages. Text extraction from password-protected PDFs and Office document parsing are not supported; their original bytes can still be retained as project files. Unsupported binary formats can be retained as project files but cannot be sent as readable attachments.
 
-The agent's **`save_file` tool still generates CSV, Markdown, JSON, TXT, and HTML only**. Storing and downloading an uploaded CSS or arbitrary binary file is supported; generating arbitrary file types through `save_file` remains future work. Generated downloads from project sessions are also retained in the project when its storage budget permits.
+The legacy **`save_file` download tool** generates CSV, Markdown, JSON, TXT, and HTML. Use **`write_file`** with local file access for CSS, JavaScript, any other file extension, or files inside subfolders. Generated downloads from project sessions are also retained in the project when its storage budget permits.
 
 ## Permissions and privacy
 
 | Action                                                 | Ask mode (default)    | Auto mode             |
 | ------------------------------------------------------ | --------------------- | --------------------- |
 | Read pages, follow links, scroll, move between tabs    | Goes ahead            | Goes ahead            |
+| Read Downloads/Documents after local file setup       | Goes ahead            | Goes ahead            |
+| Write files or create folders in Downloads/Documents  | Asks first            | Goes ahead            |
 | Detected submit, send, delete, or upload               | Asks first            | Goes ahead            |
 | Detected payment, password/code entry, or access grant | Hands the step to you | Hands the step to you |
 
@@ -148,8 +174,10 @@ Native browser checks use the extension's own `chrome.debugger` integration, wit
 
 ```sh
 corepack pnpm install-chrome
-corepack pnpm autorun workspace-chat,workspace,restart-restore,panel-attach,inference-controls,permission-warnings --timeout 180
+corepack pnpm autorun local-files,workspace-chat,workspace,restart-restore,panel-attach,inference-controls,permission-warnings --timeout 180
 ```
+
+The isolated `local-files` browser fixture runs on Linux and macOS; omit that check on Windows. Native helper unit tests run on all three platforms in CI.
 
 If Chrome for Testing is unavailable for your architecture, set `CHROME_PATH` to a compatible installed Chrome/Chromium executable before running `autorun`. Example environment syntax:
 

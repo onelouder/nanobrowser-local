@@ -4,6 +4,7 @@ import { argsJsonSchema, isReadOnly, TOOL_SPECS } from '@src/browser-control';
 import type { ToolDefinition } from '@src/llm';
 import { READ_ATTACHMENT_TOOL } from './attachments';
 import { SAVE_FILE_TOOL } from './save-file';
+import { LOCAL_FILE_DEFINITIONS } from './local-files';
 
 export type ToolKind = 'read' | 'wait' | 'mutate' | 'control' | 'state';
 
@@ -111,7 +112,7 @@ export function allTools(agentTools: AgentTool[] = []): AgentTool[] {
         ),
       }) satisfies AgentTool,
   );
-  return [...layer, DONE_TOOL, READ_ATTACHMENT_TOOL, SAVE_FILE_TOOL, ...agentTools];
+  return [...layer, DONE_TOOL, READ_ATTACHMENT_TOOL, SAVE_FILE_TOOL, ...LOCAL_FILE_DEFINITIONS, ...agentTools];
 }
 
 /**
@@ -133,7 +134,8 @@ export function toolsForRun(options: {
 export function kindOf(tool: string, args: Record<string, unknown>): ToolKind {
   if (tool === 'done' || tool === 'ask_user') return 'control';
   if (tool === 'wait') return 'wait';
-  if (tool === 'save_file') return 'state';
+  if (tool === 'save_file' || tool === 'write_file' || tool === 'create_directory') return 'state';
+  if (tool === 'list_files' || tool === 'read_file') return 'read';
   if (tool === 'read_attachment') return 'read';
   if (tool === 'tabs') return args.action === 'list' ? 'read' : 'mutate';
   const spec = TOOL_SPECS.find(s => s.name === tool);

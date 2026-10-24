@@ -54,6 +54,23 @@ describe('cards', () => {
     expect(html).toContain('on mail.example.com');
   });
 
+  it('a local file approval names the file without website-only controls', () => {
+    const html = render(
+      card('write-card', {
+        category: 'local-file',
+        action: 'Create file',
+        target: 'downloads/main.css',
+        reason: 'Writes a file on your computer',
+        canRemember: false,
+      }),
+    );
+    expect(html).toContain('downloads/main.css');
+    expect(html).toContain('>Allow</button>');
+    expect(html).not.toContain('Show tab');
+    expect(html).not.toContain('on this page');
+    expect(html).not.toContain('Allow on this site');
+  });
+
   it('a site set to Ask has no Allow on this site', () => {
     const html = render(card('write-card', { category: 'delete', site: 'bank.example', canRemember: false }));
     expect(html).not.toContain('Allow on this site');

@@ -75,18 +75,17 @@ async function connectExistingChat(
   targetId: number,
 ): Promise<chrome.tabs.Tab> {
   const view = await chrome.tabs.create({
-    url: chrome.runtime.getURL(
-      `/workspace.html?projectId=${projectId}&conversationId=${conversationId}&section=overview`,
-    ),
+    url: chrome.runtime.getURL(`/workspace.html?projectId=${projectId}`),
     active: true,
   });
   await waitForLoad(view.id!);
   await until(
     () => workspace('read'),
-    read => read.body.includes('Move this conversation into this project'),
+    read => read.body.includes('Link existing chat'),
     'link action',
   );
-  await workspace('click', { label: 'Move this conversation into this project' });
+  await workspace('select', { label: 'Existing chat', value: conversationId });
+  await workspace('click', { label: 'Link existing chat' });
   await until(
     () => panel(targetId, 'read'),
     read => read.body.includes(`Project: ${PROJECT}`),
@@ -105,6 +104,32 @@ async function connectExistingChat(
     'website remains bound to original chat',
   );
   return view;
+}
+
+async function linkFromSidePanel(projectId: string, conversationId: string, targetId: number): Promise<void> {
+  await until(
+    () => panel(targetId, 'read'),
+    read => read.body.includes(PROJECT),
+    'project selector loaded',
+  );
+  await panel(targetId, 'select', { label: 'Project for this chat', value: projectId });
+  await until(
+    () => getConversation(conversationId),
+    value => value?.projectId === projectId,
+    'side panel linked existing chat',
+  );
+  await until(
+    () => panel(targetId, 'read'),
+    read => read.body.includes(`Project: ${PROJECT}`),
+    'side panel assignment label',
+  );
+  await panel(targetId, 'select', { label: 'Project for this chat', value: '' });
+  await until(
+    () => getConversation(conversationId),
+    value => !value?.projectId,
+    'side panel unlinked existing chat',
+  );
+  await waitForText(targetId, ORIGINAL);
 }
 
 async function attachDocuments(conversationId: string, targetId: number): Promise<void> {
@@ -243,6 +268,7 @@ defineCheck({
       });
       await waitForLoad(side.id!);
       await waitForText(target.id!, ORIGINAL);
+      await linkFromSidePanel(project.id, current.id, target.id!);
       const view = await connectExistingChat(project.id, current.id, target.id!);
       await attachDocuments(current.id, target.id!);
       await continueChat(target.id!);
@@ -251,6 +277,8 @@ defineCheck({
       assert((await chrome.tabs.get(view.id!)).active, 'chat actions do not steal workspace focus');
       return {
         existingChatLinked: true,
+        sidePanelLinkAndUnlink: true,
+        projectLinkWithoutChatUrl: true,
         sidePanelRefreshed: true,
         fourDocumentsRead: true,
         followUpPromptReceivedFiles: true,

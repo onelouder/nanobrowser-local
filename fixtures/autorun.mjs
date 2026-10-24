@@ -18,9 +18,11 @@
 //
 // Chrome: CHROME_PATH, or the stable Chrome for Testing that pnpm install-chrome put in ~/.cache/puppeteer/chrome.
 import { spawn, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { autorunEvents, PORT, queueAutorunJob, startServer } from './server.mjs';
 import { findChrome } from './find-chrome.mjs';
 
@@ -55,14 +57,59 @@ if (!flag('--no-build')) {
   });
 }
 
-const server = await startServer();
-const argsOf = name =>
-  name === 'permission-warnings'
-    ? { ...args, oldManifest: JSON.parse(readFileSync(join(root, 'fixtures', 'upgrade', 'old-manifest.json'), 'utf8')) }
-    : args;
-queueAutorunJob({ checks: names.map(name => ({ name, args: argsOf(name) })) });
+function prepareLocalFiles(profile) {
+  if (process.platform === 'win32')
+    throw new Error('The isolated local-files browser fixture requires Linux or macOS.');
+  const roots = { downloads: join(profile, 'Downloads'), documents: join(profile, 'Documents') };
+  for (const folder of Object.values(roots)) mkdirSync(folder);
+  for (let index = 1; index <= 4; index++)
+    writeFileSync(
+      join(roots.downloads, `oculus-cleanroom-0${index}.md`),
+      `# Investigation ${index}\noculus-local-evidence-${index}\n`,
+    );
+  const wrapper = join(profile, 'file-host.mjs');
+  writeFileSync(
+    wrapper,
+    `import { serve } from ${JSON.stringify(pathToFileURL(join(root, 'native-files', 'host.mjs')).href)};\nawait serve(process.stdin, process.stdout, ${JSON.stringify(roots)});\n`,
+  );
+  const launcher = join(profile, 'file-host');
+  const quote = value => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+  writeFileSync(launcher, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(wrapper)}\n`, { mode: 0o700 });
+  registerLocalFileHost(profile, launcher);
+  return roots;
+}
+
+function registerLocalFileHost(profile, launcher) {
+  const id = createHash('sha256')
+    .update(outDir)
+    .digest('hex')
+    .slice(0, 32)
+    .replace(/[0-9a-f]/g, digit => String.fromCharCode(97 + parseInt(digit, 16)));
+  const manifests = join(profile, 'NativeMessagingHosts');
+  mkdirSync(manifests);
+  writeFileSync(
+    join(manifests, 'com.nanobrowser.local_files.json'),
+    JSON.stringify({
+      name: 'com.nanobrowser.local_files',
+      description: 'Isolated local-file browser fixture',
+      path: launcher,
+      type: 'stdio',
+      allowed_origins: [`chrome-extension://${id}/`],
+    }),
+  );
+}
 
 const profile = mkdtempSync(join(tmpdir(), 'nb3-autorun-'));
+const fixtureRoots = names.includes('local-files') ? prepareLocalFiles(profile) : undefined;
+const server = await startServer();
+const argsOf = name => {
+  if (name === 'local-files') return { ...args, fixtureRoots };
+  return name === 'permission-warnings'
+    ? { ...args, oldManifest: JSON.parse(readFileSync(join(root, 'fixtures', 'upgrade', 'old-manifest.json'), 'utf8')) }
+    : args;
+};
+queueAutorunJob({ checks: names.map(name => ({ name, args: argsOf(name) })) });
+
 const chromeArgs = [
   `--user-data-dir=${profile}`,
   `--load-extension=${outDir}`,

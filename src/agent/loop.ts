@@ -1108,7 +1108,12 @@ export class AgentLoop {
       const r = this.options.agentTool
         ? await this.options.agentTool(call, signal)
         : { text: `error: ${call.toolName} is not available.`, isError: true };
-      outcome = { call, kind, text: r.text, isError: r.isError };
+      const fileRead = call.toolName === 'read_file' || call.toolName === 'list_files';
+      const text =
+        fileRead && !r.isError
+          ? this.options.layer.wrap(r.text, { attachment: `${String(args.root)}/${String(args.path ?? '')}` })
+          : r.text;
+      outcome = { call, kind, text, isError: r.isError };
     } else {
       // Mutations return their diff; the model never sets `observe`.
       const sent = kind === 'mutate' && call.toolName !== 'tabs' ? { ...args, observe: 'diff' } : args;

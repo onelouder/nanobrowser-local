@@ -13,7 +13,7 @@ import { downloadFile } from './files';
 import { ProjectForm, ProjectOverview } from './ProjectForm';
 import type { ProjectDraft } from './ProjectForm';
 import { ResumeDialog } from './ResumeDialog';
-import { NewSession, Sessions } from './Sessions';
+import { LinkChat, NewSession, Sessions } from './Sessions';
 import { Chat } from './Chat';
 import type { RunAction } from './Sessions';
 
@@ -33,6 +33,7 @@ export function App() {
     if (params.get('section') === 'overview') return 'overview';
     return params.has('conversationId') && params.get('resume') !== '1' ? 'chat' : 'overview';
   });
+  const [newChatOpen, setNewChatOpen] = useState(false);
   const [editing, setEditing] = useState<'new' | 'edit' | null>(null);
   const [preview, setPreview] = useState<ResumePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,8 +147,7 @@ export function App() {
   const availableSessions = view ? view.sessions : unassigned;
   const chatSession =
     sessionId && !linkedSession ? undefined : (availableSessions.find(s => s.id === sessionId) ?? availableSessions[0]);
-  const openChat = (id: string) => {
-    const targetProject = list.sessions.find(s => s.id === id)?.projectId ?? projectId;
+  const openChat = (id: string, targetProject = list.sessions.find(s => s.id === id)?.projectId ?? projectId) => {
     setSessionId(id);
     setChatRevision(value => value + 1);
     setSection('chat');
@@ -155,6 +155,10 @@ export function App() {
     const query = new URLSearchParams({ conversationId: id });
     if (targetProject) query.set('projectId', targetProject);
     history.replaceState(null, '', `?${query}`);
+  };
+  const newChat = () => {
+    setNewChatOpen(true);
+    setSection('sessions');
   };
   const review = (id: string) =>
     void run(async () => {
@@ -166,7 +170,7 @@ export function App() {
       session={chatSession}
       sessions={availableSessions}
       onSelect={openChat}
-      onNewSession={() => setSection('sessions')}
+      onNewSession={newChat}
       onResume={() => review(chatSession.id)}
     />
   ) : (
@@ -179,6 +183,7 @@ export function App() {
         <div className="flex items-center gap-4">
           <Logo height={25} />
           <h1 className="font-serif text-xl">{t('workspace.title')}</h1>
+          <span className="text-xs text-nb-muted">v{chrome.runtime.getManifest().version}</span>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -245,30 +250,24 @@ export function App() {
           {!editing && view ? (
             <>
               <ProjectHeader view={view} busy={busy} run={run} onEdit={() => setEditing('edit')} />
-              {linkedSession && linkedSession.projectId !== view.project.id ? (
-                <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-nb-border bg-nb-bg p-3 text-sm">
-                  <span>
-                    {t('workspace.currentChat')}: {linkedSession.title}
-                  </span>
-                  <Button
-                    disabled={
-                      busy || view.project.archived || ['running', 'awaiting_user'].includes(linkedSession.status)
-                    }
-                    onClick={() =>
-                      void run(async () => {
-                        await requestWorkspace({
-                          op: 'assign',
-                          conversationId: linkedSession.id,
-                          projectId: view.project.id,
-                        });
-                        setNotice(t('workspace.chatLinked'));
-                        setSection('chat');
-                      })
-                    }>
-                    {t('workspace.linkChat')}
-                  </Button>
-                </div>
-              ) : null}
+              <div className="mt-4 flex flex-col gap-3">
+                <LinkChat
+                  key={view.project.id}
+                  project={view.project}
+                  sessions={list.sessions}
+                  projects={list.projects}
+                  selectedId={sessionId}
+                  onNewChat={newChat}
+                  showHint={section !== 'chat'}
+                  busy={busy}
+                  run={run}
+                  onLinked={async id => {
+                    await refresh();
+                    openChat(id, view.project.id);
+                    setNotice(t('workspace.chatLinked'));
+                  }}
+                />
+              </div>
               <nav className="my-5 flex flex-wrap gap-2" aria-label={t('workspace.title')}>
                 {SECTIONS.map(item => (
                   <Button
@@ -289,7 +288,14 @@ export function App() {
                 {section === 'sessions' ? (
                   <div className="flex flex-col gap-4">
                     {!view.project.archived ? (
-                      <NewSession projectId={view.project.id} busy={busy} run={run} onCreated={openChat} />
+                      <NewSession
+                        projectId={view.project.id}
+                        busy={busy}
+                        run={run}
+                        onCreated={openChat}
+                        expanded={newChatOpen}
+                        onExpandedChange={setNewChatOpen}
+                      />
                     ) : null}
                     <Sessions
                       sessions={view.sessions}

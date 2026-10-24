@@ -11,7 +11,8 @@ describe('manifest permission lists', () => {
     const product = permissionLists('product');
     expect([...OPTIONAL_PERMISSIONS].sort()).toEqual([...FOUR].sort());
     for (const p of FOUR) expect(product.permissions).not.toContain(p);
-    expect([...product.optional_permissions].sort()).toEqual([...FOUR].sort());
+    expect([...product.optional_permissions].sort()).toEqual([...FOUR, 'nativeMessaging'].sort());
+    expect(product.permissions).not.toContain('nativeMessaging');
   });
 
   it('the product requires scripting, for the page border, and does not ask for activeTab', () => {
@@ -23,12 +24,12 @@ describe('manifest permission lists', () => {
 
   it('the autorun build requires the four and has nothing optional', () => {
     const autorun = permissionLists('autorun');
-    for (const p of FOUR) expect(autorun.permissions).toContain(p);
+    for (const p of [...FOUR, 'nativeMessaging']) expect(autorun.permissions).toContain(p);
     expect(autorun.optional_permissions).toEqual([]);
   });
 
   it('both builds require the same other permissions', () => {
-    const others = (list: string[]) => list.filter(p => !FOUR.includes(p)).sort();
+    const others = (list: string[]) => list.filter(p => ![...FOUR, 'nativeMessaging'].includes(p)).sort();
     expect(others(permissionLists('product').permissions)).toEqual(others(permissionLists('autorun').permissions));
   });
 });

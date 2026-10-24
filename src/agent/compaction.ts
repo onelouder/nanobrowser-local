@@ -96,7 +96,7 @@ interface StoredResult {
   page?: { tabId?: number; url?: string };
 }
 
-const READS = new Set(['snapshot', 'find', 'read', 'screenshot', 'wait', 'read_attachment']);
+const READS = new Set(['snapshot', 'find', 'read', 'screenshot', 'wait', 'read_attachment', 'read_file', 'list_files']);
 const ALLOWED: Record<string, string> = {
   user: 'allowed by the user',
   'site-rule': "allowed by the site's rule",
@@ -151,11 +151,19 @@ export function ledgerLines(groups: Unit[], turns: Map<string, number>): LedgerL
           kind: 'blocked',
           text: `${tab}${p.toolName} ${quote(String(args.url ?? ''), 120)}: not allowed`,
         });
-      } else if (p.toolName === 'save_file' || p.toolName === 'upload') {
+      } else if (
+        p.toolName === 'save_file' ||
+        p.toolName === 'upload' ||
+        p.toolName === 'write_file' ||
+        p.toolName === 'create_directory'
+      ) {
+        const name = args.root
+          ? `${String(args.root)}/${String(args.path)}`
+          : String(args.filename ?? args.attachmentId ?? '');
         lines.push({
           ...base,
           kind: 'file',
-          text: `${tab}${p.toolName} ${quote(String(args.filename ?? args.attachmentId ?? ''), 120)}${code ? `: ${code}` : ''}`,
+          text: `${tab}${p.toolName} ${quote(name, 120)}${code ? `: ${code}` : ''}`,
         });
       } else if (code) {
         lines.push({
