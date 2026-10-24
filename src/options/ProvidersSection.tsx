@@ -3,12 +3,14 @@
 // src/llm from this page; settings are written through chrome.storage, with no worker command.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
-import { listModels } from '@src/llm';
+import { listModels, requestOutputLimit, resolveProfile } from '@src/llm';
 import type { ConnectionResult, ModelList, ProviderKind } from '@src/llm';
 import type { ReasoningEffort } from '@src/llm/catalogue';
 import {
   capabilityOf,
   DEFAULT_SETTINGS,
+  DEFAULT_MAX_CONCURRENT,
+  learnt,
   keysStorage,
   LOCAL_KINDS,
   providersStorage,
@@ -34,7 +36,7 @@ export const KINDS: Array<{ kind: ProviderKind; label: string; needsKey: boolean
   { kind: 'openrouter', label: 'OpenRouter', needsKey: true },
   { kind: 'ollama', label: 'Ollama', needsKey: false, baseUrl: 'http://localhost:11434' },
   { kind: 'lmstudio', label: 'LM Studio', needsKey: false, baseUrl: 'http://localhost:1234' },
-  { kind: 'openai-compatible', label: 'OpenAI-compatible', needsKey: false, baseUrl: '' },
+  { kind: 'openai-compatible', label: 'OpenAI-compatible', needsKey: false, baseUrl: 'http://192.168.146.34:8010/v1' },
 ];
 
 const EMPTY_PROVIDERS: ProviderConfig[] = [];
@@ -531,6 +533,7 @@ function ProviderItem({ provider }: { provider: ProviderConfig }) {
           ) : null}
         </Line>
       </div>
+      <ProviderLimits provider={provider} />
       {listError ? (
         listError.originRefused ? (
           <OriginFix kind={provider.kind} />
@@ -552,6 +555,151 @@ function ProviderItem({ provider }: { provider: ProviderConfig }) {
         ),
       )}
     </li>
+  );
+}
+
+function ProviderLimits({ provider }: { provider: ProviderConfig }) {
+  return (
+    <details className="rounded-lg border border-nb-border p-3 text-sm">
+      <summary className="cursor-pointer font-medium">{t('models.limits')}</summary>
+      <div className="mt-3 flex flex-col gap-4">
+        <ConcurrencyLimit provider={provider} />
+        <p className="text-nb-muted">{t('models.tokenLimitsHint')}</p>
+        {provider.models.map(model => (
+          <ModelLimits key={model.name} provider={provider} model={model} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function ConcurrencyLimit({ provider }: { provider: ProviderConfig }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const saved = provider.maxConcurrent ?? DEFAULT_MAX_CONCURRENT;
+  const save = async () => {
+    const value = Number(draft ?? saved);
+    if (!Number.isSafeInteger(value) || value < 1) return;
+    await providersStorage.set(list =>
+      list.map(p => {
+        const shared = provider.concurrencyGroup && p.concurrencyGroup === provider.concurrencyGroup;
+        return p.id === provider.id || shared ? { ...p, maxConcurrent: value } : p;
+      }),
+    );
+    setDraft(null);
+  };
+  return (
+    <form
+      className="flex flex-wrap items-end gap-3"
+      onSubmit={e => {
+        e.preventDefault();
+        void save();
+      }}>
+      <label className="flex flex-col gap-1">
+        <span>{t('models.concurrency')}</span>
+        <Input
+          aria-label={t('models.concurrency')}
+          type="number"
+          min={1}
+          max={Number.MAX_SAFE_INTEGER}
+          step={1}
+          required
+          className="w-32"
+          value={draft ?? saved}
+          onChange={e => setDraft(e.target.value)}
+        />
+      </label>
+      <Button type="submit" aria-label={t('models.saveConcurrency', { name: provider.name })}>
+        {t('common.save')}
+      </Button>
+      <p className="w-full text-nb-muted">
+        {t(provider.concurrencyGroup ? 'models.concurrencyShared' : 'models.concurrencyHint')}
+      </p>
+    </form>
+  );
+}
+
+function ModelLimits({ provider, model }: { provider: ProviderConfig; model: ModelEntry }) {
+  const profile = resolveProfile({
+    kind: provider.kind,
+    baseUrl: provider.baseUrl,
+    modelName: model.name,
+    overrides: model.overrides,
+    detectedContext: model.detectedContext,
+    ...learnt(model),
+  });
+  const [contextDraft, setContextDraft] = useState<string | null>(null);
+  const [outputDraft, setOutputDraft] = useState<string | null>(null);
+  const context = contextDraft ?? model.overrides?.contextWindow ?? profile.contextWindow;
+  const output = outputDraft ?? model.overrides?.outputLimit ?? requestOutputLimit(profile);
+  const save = async () => {
+    const contextWindow = Number(context);
+    const outputLimit = Number(output);
+    if (!Number.isSafeInteger(contextWindow) || contextWindow < 1024) return;
+    if (!Number.isSafeInteger(outputLimit) || outputLimit < 1 || outputLimit >= contextWindow) return;
+    await providersStorage.set(list =>
+      list.map(p =>
+        p.id !== provider.id
+          ? p
+          : {
+              ...p,
+              models: p.models.map(m =>
+                m.name !== model.name
+                  ? m
+                  : { ...m, overrides: { ...m.overrides, contextWindow, maxOutput: outputLimit, outputLimit } },
+              ),
+            },
+      ),
+    );
+    setContextDraft(null);
+    setOutputDraft(null);
+  };
+  return (
+    <form
+      className="flex flex-wrap items-end gap-3 border-t border-nb-border pt-3"
+      aria-label={t('models.modelLimits', { name: model.name })}
+      onSubmit={e => {
+        e.preventDefault();
+        void save();
+      }}>
+      <span className="w-full break-all font-mono">{model.name}</span>
+      <label className="flex flex-col gap-1">
+        <span>{t('models.contextLimit')}</span>
+        <Input
+          aria-label={`${model.name}: ${t('models.contextLimit')}`}
+          type="number"
+          min={1024}
+          max={Number.MAX_SAFE_INTEGER}
+          step={1}
+          required
+          className="w-40"
+          value={context}
+          onChange={e => setContextDraft(e.target.value)}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span>{t('models.outputLimit')}</span>
+        <Input
+          aria-label={`${model.name}: ${t('models.outputLimit')}`}
+          type="number"
+          min={1}
+          max={Number(context) - 1}
+          step={1}
+          required
+          className="w-40"
+          value={output}
+          onChange={e => setOutputDraft(e.target.value)}
+        />
+      </label>
+      <Button type="submit" aria-label={t('models.saveLimits', { name: model.name })}>
+        {t('common.save')}
+      </Button>
+      <p className="w-full text-nb-muted">
+        {t('models.effectiveLimits', {
+          context: profile.contextWindow.toLocaleString(),
+          output: requestOutputLimit(profile).toLocaleString(),
+        })}
+      </p>
+    </form>
   );
 }
 

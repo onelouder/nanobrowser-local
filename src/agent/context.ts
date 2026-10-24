@@ -121,6 +121,7 @@ export function toModelMessages(branch: Entry[], options: ContextOptions): Model
   };
   // An image that belongs to a tool result travels in a user message after all of its reply's results: a user message
   // between two results leaves the later call without a result, and the request is refused.
+  const newestHeader = entries.findLast(e => e.appOwned?.kind === 'header')?.id;
   let images: UserPart[] = [];
   const flushImages = () => {
     if (images.length) push({ role: 'user', content: images } as ModelMessage);
@@ -130,7 +131,16 @@ export function toModelMessages(branch: Entry[], options: ContextOptions): Model
     const m = e.message;
     if (m.role !== 'tool') flushImages();
     if (m.role === 'user') {
-      const content = userParts(m.parts, { keep });
+      // Saved site instructions apply to the current page, not to pages visited earlier in the task.
+      const parts =
+        e.appOwned?.kind === 'header' && e.id !== newestHeader
+          ? m.parts.map(p =>
+              p.type === 'text'
+                ? { ...p, text: p.text.replace(/\n<site-instructions>[\s\S]*<\/site-instructions>$/, '') }
+                : p,
+            )
+          : m.parts;
+      const content = userParts(parts, { keep });
       if (content.length) push({ role: 'user', content } as ModelMessage);
     } else if (m.role === 'assistant') {
       const content: AssistantPart[] = [];

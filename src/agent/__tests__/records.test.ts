@@ -2,6 +2,8 @@ import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { activeBranch, createConversation, getRun, putRun } from '@src/store/conversations';
+import { getCheckpoint } from '@src/store/checkpoints';
+import { planRestore } from '../restore';
 import { closeDb } from '@src/store/db';
 import { EMPTY_GUARDS, ZERO_USAGE } from '@src/store/types';
 import { note, openCalls, RunWriter, storedResult } from '../records';
@@ -104,4 +106,40 @@ describe('run records', () => {
     await new RunWriter(c.id, 'r2').run({ status: 'done', outcome: 'success' });
     expect(await getRun(c.id)).toMatchObject({ status: 'done', outcome: 'success' });
   });
+});
+
+it('recovers a completed tool and its verification state after the database connection is lost', async () => {
+  const c = await createConversation({ mode: 'ask' });
+  const writer = new RunWriter(c.id, 'attempt');
+  await putRun({
+    conversationId: c.id,
+    runId: 'attempt',
+    leafEntryId: null,
+    status: 'running',
+    steering: [],
+    turns: 0,
+    usage: ZERO_USAGE,
+    debt: [],
+    guards: EMPTY_GUARDS,
+    tabs: [1],
+    startedAt: '',
+    updatedAt: '',
+  });
+  await writer.message({
+    role: 'assistant',
+    parts: [{ type: 'tool-call', toolCallId: 'write', toolName: 'click', input: {} }],
+  });
+  await writer.intent('write', 'click', { tabId: 1 });
+  const debt = [{ toolCallId: 'write', tabId: 1, state: 'open' as const, label: 'clicked Save' }];
+  const result = await writer.toolResult('write', 'click', 'dispatched; outcome pending', false, undefined, undefined, {
+    debt,
+    turns: 1,
+    guards: EMPTY_GUARDS,
+  });
+  await closeDb();
+  const checkpoint = await getCheckpoint(c.id);
+  const restored = (await getRun(c.id))!;
+  expect(checkpoint).toMatchObject({ leafEntryId: result.id, debt, turns: 1 });
+  expect(restored.debt).toEqual(debt);
+  expect(planRestore(restored, await activeBranch(c.id)).results).toEqual([]);
 });

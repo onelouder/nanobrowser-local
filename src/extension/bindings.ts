@@ -45,7 +45,7 @@ export interface ScopeHooks {
    * The scope of a conversation changed: its panels get the new list, its session the new tabs. Called with no tabs
    * added or removed when a tab's title, address or icon changed.
    */
-  changed(conversationId: string, added: number[], removed: number[]): void;
+  changed(conversationId: string, added: number[], removed: number[], windowClosing?: boolean): void;
 }
 
 export class TabScope {
@@ -56,7 +56,7 @@ export class TabScope {
   #grouping = new Set<number>();
 
   constructor(readonly hooks: ScopeHooks) {
-    chrome.tabs.onRemoved.addListener(tabId => void this.#forget(tabId));
+    chrome.tabs.onRemoved.addListener((tabId, info) => void this.#forget(tabId, info.isWindowClosing));
     chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
       const current = this.#currentActive.get(windowId);
       if (current !== undefined && current !== tabId) this.#previousActive.set(windowId, current);
@@ -291,12 +291,12 @@ export class TabScope {
     }
   }
 
-  async #forget(tabId: number): Promise<void> {
+  async #forget(tabId: number, windowClosing: boolean): Promise<void> {
     const state = await load();
     const binding = state.tabs[tabId];
     if (!binding) return;
     delete state.tabs[tabId];
     await save();
-    this.hooks.changed(binding.conversationId, [], [tabId]);
+    this.hooks.changed(binding.conversationId, [], [tabId], windowClosing);
   }
 }

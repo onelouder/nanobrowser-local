@@ -12,6 +12,7 @@ export interface Shortcut {
   description: string;
   /** The prompt, sent as the user's message. */
   text: string;
+  steps?: string[];
   startUrl?: string;
   mode?: PermissionMode;
   model?: ModelRef;
@@ -19,16 +20,25 @@ export interface Shortcut {
 
 export const NAME_MAX = 64;
 export const DESCRIPTION_MAX = 1024;
+export const WORKFLOW_STEPS_MAX = 50;
+export const WORKFLOW_STEP_MAX = 4000;
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** Why a shortcut cannot be saved, or null. Messages are i18n keys for the editor. */
 export function checkShortcut(
   s: Shortcut,
   others: Array<{ name: string }> = [],
-): 'shortcut.error.name' | 'shortcut.error.taken' | 'shortcut.error.text' | 'shortcut.error.url' | null {
+):
+  | 'shortcut.error.name'
+  | 'shortcut.error.taken'
+  | 'shortcut.error.text'
+  | 'shortcut.error.url'
+  | 'shortcut.error.steps'
+  | null {
   if (!NAME.test(s.name) || s.name.length > NAME_MAX) return 'shortcut.error.name';
   if (s.name === 'new' || s.name === 'compact' || others.some(o => o.name === s.name)) return 'shortcut.error.taken';
   if (!s.text.trim()) return 'shortcut.error.text';
+  if (s.steps && !validSteps(s.steps)) return 'shortcut.error.steps';
   if (s.startUrl && !isStartUrl(s.startUrl)) return 'shortcut.error.url';
   return null;
 }
@@ -60,6 +70,7 @@ export function toSkillMd(s: Shortcut): string {
     'user-invocable: true',
   ];
   const meta: string[] = [];
+  if (s.steps?.length) meta.push(`    steps: ${scalar(JSON.stringify(s.steps))}`);
   if (s.startUrl) meta.push(`    start-url: ${scalar(s.startUrl)}`);
   if (s.mode) meta.push(`    mode: ${s.mode}`);
   if (s.model) meta.push(`    provider: ${scalar(s.model.providerId)}`, `    model: ${scalar(s.model.model)}`);
@@ -105,6 +116,34 @@ function parseYaml(lines: string[]): Yaml {
   return root;
 }
 
+function validSteps(steps: unknown): steps is string[] {
+  return (
+    Array.isArray(steps) &&
+    steps.length <= WORKFLOW_STEPS_MAX &&
+    steps.every(step => typeof step === 'string' && step.trim().length > 0 && step.length <= WORKFLOW_STEP_MAX)
+  );
+}
+
+function parseSteps(value: string | undefined): string[] | undefined {
+  if (!value) return undefined;
+  try {
+    const steps: unknown = JSON.parse(value);
+    return validSteps(steps) && steps.length ? steps : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Workflows use the same agent and permissions as a normal shortcut. */
+export function shortcutPrompt(shortcut: Shortcut): string {
+  if (!shortcut.steps?.length) return shortcut.text;
+  return [
+    shortcut.text,
+    'Follow these workflow steps in order. In your final answer, report any unfinished steps:',
+    ...shortcut.steps.map((step, i) => `${i + 1}. ${step}`),
+  ].join('\n\n');
+}
+
 const str = (v: string | Yaml | undefined): string | undefined => (typeof v === 'string' ? v : undefined);
 
 /** A shortcut from its `SKILL.md` text, or null when the text is not one. */
@@ -120,9 +159,11 @@ export function parseSkillMd(text: string): Shortcut | null {
   const provider = str(nb.provider);
   const model = str(nb.model);
   const startUrl = str(nb['start-url']);
+  const steps = parseSteps(str(nb.steps));
   return {
     name,
     description: str(yaml.description) ?? '',
+    ...(steps ? { steps } : {}),
     text: match[2].replace(/\s+$/, ''),
     ...(startUrl && isStartUrl(startUrl) ? { startUrl } : {}),
     ...(mode === 'ask' || mode === 'auto' ? { mode } : {}),

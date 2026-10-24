@@ -169,6 +169,7 @@ export function Composer({
   onShareTab,
   sharedTabs = [],
   files = [],
+  attachmentsPending = false,
   onAttach,
   onScreenshot,
   onRemoveFile,
@@ -202,6 +203,7 @@ export function Composer({
   sharedTabs?: number[];
   /** Files attached to the next message: from +, drop or paste. */
   files?: PendingFile[];
+  attachmentsPending?: boolean;
   onAttach?: (files: File[]) => void;
   /** "Screenshot of this tab" in the + menu. */
   onScreenshot?: () => void;
@@ -364,7 +366,7 @@ export function Composer({
   const latest = useRef({ transcribe, finish: finishRecording, start: startRecording });
   latest.current = { transcribe, finish: finishRecording, start: startRecording };
   // Files go with a new message; a queued message carries text only.
-  const canAttach = !!onAttach && !active && !noModel;
+  const canAttach = !!onAttach && !active && !noModel && !attachmentsPending;
 
   useEffect(() => {
     if (draft) {
@@ -384,6 +386,7 @@ export function Composer({
   }, [text]);
 
   const send = () => {
+    if (attachmentsPending) return;
     const value = text.trim();
     if ((!value && !((files.length || quotes.length) && !active)) || !model) return;
     onSend(value);
@@ -395,6 +398,7 @@ export function Composer({
   const slash = onLaunch && !launcherClosed ? /^\/([a-z0-9-]*)$/i.exec(text) : null;
   const items = slash ? launcherItems(slash[1], shortcuts) : [];
   const pick = (item: LauncherItem) => {
+    if (attachmentsPending) return;
     setText('');
     setSelected(0);
     onLaunch?.(item);
@@ -650,7 +654,7 @@ export function Composer({
           ) : (
             <button
               type="button"
-              disabled={(!text.trim() && !files.length && !quotes.length) || !model}
+              disabled={attachmentsPending || (!text.trim() && !files.length && !quotes.length) || !model}
               aria-label={t('composer.send')}
               title={t('composer.send')}
               className="flex size-7 shrink-0 items-center justify-center rounded-full bg-nb-accent text-white shadow-sm transition-colors hover:bg-nb-accent-strong disabled:opacity-40 disabled:shadow-none disabled:hover:bg-nb-accent"

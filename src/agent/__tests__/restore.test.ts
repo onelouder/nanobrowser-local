@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { INTERRUPTED_MUTATION, INTERRUPTED_READ, planRestore, SKIPPED_RESTART, takenOver } from '../restore';
+import {
+  INTERRUPTED_MUTATION,
+  INTERRUPTED_READ,
+  planRestore,
+  restoreDebt,
+  SKIPPED_RESTART,
+  takenOver,
+} from '../restore';
 import type { Entry, EntryBody, RunRecord } from '@src/store/types';
 import { EMPTY_GUARDS, ZERO_USAGE } from '@src/store/types';
 
@@ -119,4 +126,53 @@ describe('the restore plan', () => {
     expect(plan.reason).toBeUndefined();
     expect(takenOver(run({ status: 'interrupted' }))).toBe(false);
   });
+});
+
+describe('workspace interruption recovery', () => {
+  it('keeps crash-before-receipt mutations as verification debt', () => {
+    const before = run({});
+    const branch = [reply(['a', 'click']), intent('a', 'click')];
+    const plan = planRestore(before, branch);
+    const debt = restoreDebt(before, branch, plan);
+    expect(debt).toMatchObject([{ toolCallId: 'a', tabId: 1, state: 'open' }]);
+    expect(restoreDebt({ ...before, debt }, branch, plan)).toEqual(debt);
+  });
+
+  it('does not reopen handovers against a recycled tab ID after browser restart', () => {
+    const before = run({
+      status: 'awaiting_user',
+      pendingPrompt: {
+        kind: 'handover',
+        request: { tabId: 1 },
+        openedAt: '',
+        answers: { toolCallId: 'a', partialResult: {} },
+      },
+    });
+    const branch = [reply(['a', 'fill_form']), intent('a', 'fill_form')];
+    const plan = planRestore(before, branch, false);
+    expect(plan.status).toBe('interrupted');
+    expect(plan.reopen).toBeUndefined();
+    expect(plan.results[0].text).toBe(INTERRUPTED_MUTATION);
+    expect(restoreDebt(before, branch, plan)).toHaveLength(1);
+  });
+
+  it('preserves suspended sessions as resumable instead of legacy Take over', () => {
+    expect(planRestore(run({ status: 'suspended' }), []).status).toBe('suspended');
+    expect(takenOver(run({ status: 'suspended' }))).toBe(false);
+  });
+});
+
+it('never reopens a handover whose answer was durably recorded', () => {
+  const before = run({
+    status: 'awaiting_user',
+    pendingPrompt: {
+      kind: 'handover',
+      request: { tabId: 1 },
+      openedAt: '',
+      answers: { toolCallId: 'a', partialResult: {} },
+    },
+  });
+  const plan = planRestore(before, [reply(['a', 'fill_form']), intent('a', 'fill_form'), result('a', 'fill_form')]);
+  expect(plan.reopen).toBeUndefined();
+  expect(plan.status).toBe('interrupted');
 });

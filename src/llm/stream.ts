@@ -4,6 +4,7 @@
 // model). The model's reasoning parts are read and discarded: no reasoning is stored or sent back.
 import { jsonSchema, streamText, tool } from 'ai';
 import type { JSONSchema7, ModelMessage, ToolSet } from 'ai';
+import { openAICompatibleBaseUrl } from './providers';
 import type { ChatModel } from './providers';
 import type { WireEffort } from './catalogue';
 import { errorText, getApiCallStatusCode, isRetryable, retryAfterMs, unwrapError } from './errors';
@@ -174,10 +175,13 @@ export function withoutImages(messages: ModelMessage[]): ModelMessage[] | null {
 
 /** Runs one turn: streams the reply, collects its tool calls, retries before anything streamed. */
 export async function streamTurn(request: TurnRequest): Promise<TurnResult> {
-  const { maxConcurrent, baseUrl, kind } = request.chat.spec;
+  const { maxConcurrent, concurrencyGroup, baseUrl, kind } = request.chat.spec;
   if (!maxConcurrent) return streamTurnNow(request);
+  const key = concurrencyGroup
+    ? `group:${concurrencyGroup}`
+    : `endpoint:${openAICompatibleBaseUrl(kind, baseUrl) ?? kind}`;
   try {
-    return await withSlot(`${kind} ${baseUrl ?? ''}`, maxConcurrent, () => streamTurnNow(request), request.signal);
+    return await withSlot(key, maxConcurrent, () => streamTurnNow(request), request.signal);
   } catch {
     return { text: '', toolCalls: [], finish: 'aborted', usage: null, durationMs: 0, attempts: 0 };
   }

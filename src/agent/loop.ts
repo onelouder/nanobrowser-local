@@ -16,6 +16,7 @@ import { note, RunWriter, storedResult } from './records';
 import { clearsDebt, createsDebt, debtLabel, refusal, unverifiedLines } from './completion';
 import type { DebtEntry } from './completion';
 import { Guards } from './guards';
+import type { GuardLimits } from './guards';
 import { contextThreshold, elisionChunk, hardLimit, planElision } from './elision';
 import { runCompaction, runShorten } from './compaction';
 import { attachmentBytes, attachmentParts, readAttachment } from './attachments';
@@ -68,12 +69,15 @@ export interface LoopOptions {
   signal: AbortSignal;
   emit: (event: AgentEvent) => void;
   turnCap: number;
+  guardLimits?: GuardLimits;
+  siteNotes?: Record<string, string>;
   /** The conversation's mode, for the page header; only the user changes it. */
   mode?: () => PermissionMode;
   now?: () => Date;
   timeZone?: string;
   /** A run continued after Continue or Resume keeps the debt and guard state it had. */
   restore?: { debt: DebtEntry[]; guards: GuardState };
+  requireObservation?: boolean;
   /** Messages the user sent while the run worked, taken once each. */
   takeSteering?: () => string[];
   /** Makes a small thumbnail of a screenshot for the activity block; none when absent. */
@@ -198,7 +202,7 @@ export class AgentLoop {
 
   constructor(readonly options: LoopOptions) {
     this.writer = new RunWriter(options.conversationId, options.runId);
-    this.guards = new Guards(options.restore?.guards);
+    this.guards = new Guards(options.restore?.guards, options.guardLimits);
     if (options.restore) this.#debt = options.restore.debt.map(d => ({ ...d }));
     this.#toolNames = new Set(options.tools.map(t => t.name));
   }
@@ -388,6 +392,7 @@ export class AgentLoop {
       tabs,
       tabInfo: id => this.options.layer.tabInfo(id),
       changed,
+      siteNotes: this.options.siteNotes,
     });
   }
 
@@ -406,13 +411,20 @@ export class AgentLoop {
     await this.#inlineAttachments();
     const tabs = await this.options.layer.tabs().catch(() => null);
     const active = tabs?.tabs.find(t => t.tabId === tabs.activeTabId);
-    if (!active || !/^https?:/i.test(active.url)) return;
+    if (!active || !/^https?:/i.test(active.url)) {
+      if (this.options.requireObservation) throw new Error('Open a session web page before resuming.');
+      return;
+    }
     const result = await this.options.layer.call(
       'snapshot',
       { tabId: active.tabId, mode: 'all', window: 'near' },
       this.options.signal,
     );
-    if (!result.ok) return;
+    if (!result.ok) {
+      if (this.options.requireObservation)
+        throw new Error('The resumed page could not be observed. Open the page and try Resume again.');
+      return;
+    }
     this.#seen.set(active.tabId, active.url);
     // Kept within budget: a share of the window, at 4 characters a token.
     const budget = Math.max(2_000, Math.min(30_000, this.options.model.profile.contextWindow * 4 * 0.2));
@@ -709,7 +721,7 @@ export class AgentLoop {
 
   /** After a turn: whether the run ends. */
   async finishTurn(reply: TurnResult, outcomes: CallOutcome[]): Promise<LoopEnd | null> {
-    await this.writer.run({ turns: this.#turns, debt: this.#debt, guards: this.guards.state });
+    await this.writer.run({ turns: this.#turns, usage: this.#usage, debt: this.#debt, guards: this.guards.state });
     const done = outcomes.find(o => o.done)?.done;
     if (done) {
       const status: RunStatus = done.outcome === 'failed' ? 'failed' : 'done';
@@ -871,7 +883,7 @@ export class AgentLoop {
       system: this.options.system,
       messages,
       tools: Object.fromEntries(tools.map(t => [t.name, { description: t.description, parameters: t.parameters }])),
-      maxOutputTokens: requestOutputLimit(model.profile),
+      maxOutputTokens: requestOutputLimit(model.profile, this.window),
       reasoning,
       noneRetry,
       signal,
@@ -968,6 +980,7 @@ export class AgentLoop {
       outcome.isError,
       outcome.result ? storedResult(outcome.result) : undefined,
       outcome.image,
+      { turns: this.#turns, usage: this.#usage, debt: this.#debt, guards: this.guards.state },
     );
     const status: ToolRow['status'] = outcome.skipped ? 'skipped' : outcome.isError ? 'failed' : 'done';
     this.options.emit({

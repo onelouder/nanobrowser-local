@@ -5,6 +5,7 @@ import { ScriptedModel, resolveProfile } from '@src/llm';
 import type { ScriptedReply } from '@src/llm';
 import { activeBranch, appendEntry, createConversation } from '@src/store/conversations';
 import { closeDb } from '@src/store/db';
+import { EMPTY_GUARDS } from '@src/store/types';
 import { AgentLoop } from '../loop';
 import type { LoopOptions } from '../loop';
 import { clearsDebt, createsDebt } from '../completion';
@@ -226,6 +227,45 @@ describe('guards', () => {
     const err = (id: string) => ({ toolCalls: [call('click', { target: { ref: id } }, id)] });
     const { end } = await run([err('a'), err('b'), err('c'), err('d'), err('e'), { text: 'Giving up.' }], layer);
     expect(end).toMatchObject({ status: 'failed', outcome: 'failed', reason: '5 calls in a row failed.' });
+  });
+
+  it.each([2, 7])('uses the configured consecutive error limit of %i', async errorCap => {
+    const layer = new FakeLayer({ click: () => failed('NOT_VISIBLE') });
+    const errors = Array.from({ length: errorCap }, (_, i) => ({
+      toolCalls: [call('click', { target: { ref: `a${i}` } }, `e${i}`)],
+    }));
+    const { end, scripted } = await run([...errors, { text: 'Unable to continue.' }], layer, {
+      guardLimits: { errorCap, noEffectCap: 3 },
+    });
+    expect(end).toMatchObject({ status: 'failed', reason: `${errorCap} calls in a row failed.` });
+    expect(scripted.calls).toHaveLength(errorCap + 1);
+    expect(scripted.calls.at(-1)!.tools.map(t => t.name)).toEqual(['done']);
+  });
+
+  it.each([1, 5])('uses the configured no-effect limit of %i', async noEffectCap => {
+    const layer = new FakeLayer({ click: () => noEffect });
+    const clicks = Array.from({ length: noEffectCap }, (_, i) => ({
+      toolCalls: [call('click', { target: { ref: 'a1' } }, `c${i}`)],
+    }));
+    const { end, scripted } = await run([...clicks, doneCall('partial', 's')], layer, {
+      guardLimits: { errorCap: 5, noEffectCap },
+    });
+    expect(end.reason).toBe(`click on the same target had no effect ${noEffectCap} times.`);
+    expect(layer.calls.filter(c => c.tool === 'click')).toHaveLength(noEffectCap);
+    expect(scripted.calls.at(-1)!.tools.map(t => t.name)).toEqual(['done']);
+  });
+
+  it('uses current limits with restored guard counters', async () => {
+    const layer = new FakeLayer({ click: () => failed('NOT_VISIBLE') });
+    const { end } = await run(
+      [{ toolCalls: [call('click', { target: { ref: 'a1' } }, 'c')] }, { text: 'Unable to continue.' }],
+      layer,
+      {
+        guardLimits: { errorCap: 7, noEffectCap: 3 },
+        restore: { debt: [], guards: { ...EMPTY_GUARDS, errorsInRow: 6 } },
+      },
+    );
+    expect(end.reason).toBe('7 calls in a row failed.');
   });
 
   it('caps the run at its turn limit, with the salvage summary', async () => {

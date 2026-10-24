@@ -93,6 +93,49 @@ export function UiLanguageRow() {
   );
 }
 
+function RunBudget({ field, max }: { field: 'turnCap' | 'errorCap' | 'noEffectCap'; max: number }) {
+  const settings = useStorage(settingsStorage, DEFAULT_SETTINGS);
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? String(settings[field]);
+  const number = Number(value);
+  const valid = value.trim() !== '' && Number.isSafeInteger(number) && number >= 1 && number <= max;
+  const label = `agent.${field}` as const;
+  const hint = `agent.${field}Hint` as const;
+  const save = () => {
+    if (!valid || draft === null) return;
+    void settingsStorage.set(s => ({ ...s, [field]: number }));
+    setDraft(null);
+  };
+  return (
+    <SettingsRow label={t(label)} description={t(hint)}>
+      <div className="flex flex-col gap-1">
+        <Input
+          aria-label={t(label)}
+          aria-invalid={!valid}
+          aria-describedby={!valid ? `${field}-error` : undefined}
+          type="number"
+          min={1}
+          max={max}
+          step={1}
+          className="w-28"
+          value={value}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={save}
+          onKeyDown={e => {
+            if (e.key === 'Enter') save();
+            if (e.key === 'Escape') setDraft(null);
+          }}
+        />
+        {!valid ? (
+          <span id={`${field}-error`} className="text-xs text-red-600" role="alert">
+            {t('agent.invalidBudget', { min: 1, max })}
+          </span>
+        ) : null}
+      </div>
+    </SettingsRow>
+  );
+}
+
 export function GeneralSection() {
   const settings = useStorage(settingsStorage, DEFAULT_SETTINGS);
   return (
@@ -100,20 +143,10 @@ export function GeneralSection() {
       <h2 className="sr-only">{t('settings.nav.general')}</h2>
       <SettingsCard title={t('general.agent')} className="flex flex-col gap-6">
         <ModeSelect />
-        <SettingsRow label={t('agent.turnCap')} description={t('agent.turnCapHint')}>
-          <Input
-            aria-label={t('agent.turnCap')}
-            type="number"
-            min={5}
-            max={500}
-            className="w-24"
-            value={settings.turnCap}
-            onChange={e => {
-              const n = Math.round(Number(e.target.value));
-              if (Number.isFinite(n) && n >= 1) void settingsStorage.set(s => ({ ...s, turnCap: Math.min(500, n) }));
-            }}
-          />
-        </SettingsRow>
+        <RunBudget field="turnCap" max={10_000} />
+        <RunBudget field="errorCap" max={100} />
+        <RunBudget field="noEffectCap" max={100} />
+        <p className="text-sm text-nb-muted">{t('agent.runLimitsHint')}</p>
       </SettingsCard>
       <SettingsCard title={t('general.language')} className="flex flex-col gap-6">
         <UiLanguageRow />

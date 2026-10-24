@@ -18,26 +18,23 @@ const TEXT_TYPES = new Set([
 ]);
 const TEXT_EXTENSIONS =
   /\.(txt|md|markdown|csv|tsv|json|jsonl|xml|html?|css|js|jsx|mjs|ts|tsx|py|rb|go|rs|java|kt|c|h|cc|cpp|hpp|cs|php|sh|bash|zsh|yaml|yml|toml|ini|cfg|conf|log|sql|swift|r|lua|pl|scala|vue|svelte)$/i;
-const DOCUMENT_EXTENSIONS = /\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf|pages|numbers|key)$/i;
+const DOCUMENT_EXTENSIONS = /\.(docx?|xlsx?|pptx?|odt|ods|odp|rtf|pages|numbers|key)$/i;
 
-export type AttachmentKind = 'image' | 'text';
+export type AttachmentKind = 'image' | 'text' | 'pdf';
 
 /** What a file is, or why it cannot be attached. */
 export function attachmentKind(
   name: string,
   mimeType: string,
 ): { kind: AttachmentKind } | { refused: string; reason: 'document' | 'type' } {
+  if (/\.pdf$/i.test(name) || mimeType === 'application/pdf') return { kind: 'pdf' };
   if (IMAGE_TYPES.has(mimeType)) return { kind: 'image' };
-  if (
-    DOCUMENT_EXTENSIONS.test(name) ||
-    mimeType === 'application/pdf' ||
-    /officedocument|msword|ms-excel|ms-powerpoint|opendocument/.test(mimeType)
-  ) {
+  if (DOCUMENT_EXTENSIONS.test(name) || /officedocument|msword|ms-excel|ms-powerpoint|opendocument/.test(mimeType)) {
     return {
-      refused: 'PDF and Office files cannot be read in this version. Copy the text into a text file, or paste it.',
+      refused: 'Office files cannot be read in this version. Copy the text into a text file, or paste it.',
       reason: 'document',
     };
   }
   if (mimeType.startsWith('text/') || TEXT_TYPES.has(mimeType) || TEXT_EXTENSIONS.test(name)) return { kind: 'text' };
-  return { refused: 'Only images (PNG, JPEG, WebP, GIF) and text files can be attached.', reason: 'type' };
+  return { refused: 'Only images (PNG, JPEG, WebP, GIF) PDFs and text files can be attached.', reason: 'type' };
 }

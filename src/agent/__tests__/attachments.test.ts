@@ -2,10 +2,17 @@ import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { ScriptedModel, resolveProfile } from '@src/llm';
-import { activeBranch, appendEntry, createConversation, putBlob } from '@src/store/conversations';
+import { activeBranch, appendEntry, createConversation, getBlob, putBlob } from '@src/store/conversations';
 import { closeDb } from '@src/store/db';
 import type { MessagePart } from '@src/store/types';
-import { ATTACHED_IMAGE_LINE, attachmentKind, attachmentParts, inlineBudget, readAttachment } from '../attachments';
+import {
+  ATTACHED_IMAGE_LINE,
+  attachmentBytes,
+  attachmentKind,
+  attachmentParts,
+  inlineBudget,
+  readAttachment,
+} from '../attachments';
 import { AgentLoop } from '../loop';
 import { toolsForRun } from '../tools';
 import { FakeHost, FakeLayer } from '../testing/fake-layer';
@@ -26,15 +33,14 @@ async function file(conversationId: string, name: string, mimeType: string, cont
 }
 
 describe('what can be attached', () => {
-  it('takes images and text files, and refuses PDF, Office and other files with the reason', () => {
+  it('takes images, text and PDFs, and refuses Office and other files with the reason', () => {
     expect(attachmentKind('a.png', 'image/png')).toEqual({ kind: 'image' });
     expect(attachmentKind('notes.md', '')).toEqual({ kind: 'text' });
     expect(attachmentKind('data.csv', 'text/csv')).toEqual({ kind: 'text' });
     expect(attachmentKind('cfg.json', 'application/json')).toEqual({ kind: 'text' });
-    expect(attachmentKind('report.pdf', 'application/pdf')).toMatchObject({
-      refused: expect.stringContaining('PDF and Office'),
-    });
-    expect(attachmentKind('plan.docx', '')).toMatchObject({ refused: expect.stringContaining('PDF and Office') });
+    expect(attachmentKind('report.pdf', 'application/pdf')).toEqual({ kind: 'pdf' });
+    expect(attachmentKind('report.PDF', '')).toEqual({ kind: 'pdf' });
+    expect(attachmentKind('plan.docx', '')).toMatchObject({ refused: expect.stringContaining('Office') });
     expect(attachmentKind('app.zip', 'application/zip')).toMatchObject({
       refused: expect.stringContaining('Only images'),
     });
@@ -200,5 +206,38 @@ describe('the model’s own screenshot', () => {
     const { toDisplay } = await import('../display');
     const rows = toDisplay(branch).flatMap(e => (e.kind === 'assistant' ? e.tools : []));
     expect(rows.find(r => r.tool === 'screenshot')?.thumbnail).toBe('data:image/jpeg;base64,THUMB');
+  });
+});
+
+describe('PDF attachments', () => {
+  it('reads extracted text inside boundaries and preserves original bytes for upload', async () => {
+    const c = await createConversation({ mode: 'ask' });
+    const f = await file(c.id, 'report.pdf', 'application/pdf', '%PDF-original');
+    const stored = (await getBlob(f.id))!;
+    const text = '[Page 1]\nAnnual revenue: 42.\n';
+    await putBlob({ ...stored, pdf: { text, pages: 1, totalPages: 2, truncated: true } });
+    const parts = await attachmentParts([f], { conversationId: c.id, wrap, contextWindow: 150_000, vision: false });
+    const shown = parts
+      .filter(p => p.type === 'text')
+      .map(p => p.text)
+      .join('\n');
+    expect(shown).toContain(wrap(text, { attachment: 'report.pdf' }));
+    expect(shown).toContain('PDF extraction was truncated: 1 of 2 pages');
+    expect(shown).not.toContain('%PDF-original');
+    const read = await readAttachment({ id: f.id, offset: 9 }, { conversationId: c.id, wrap });
+    expect(read.isError).toBe(false);
+    expect(read.text).toContain('Annual revenue: 42.');
+    expect(read.text).toContain('text beyond these limits was not extracted');
+    expect(await attachmentBytes([f.id], c.id)).toEqual({
+      files: [{ name: 'report.pdf', mimeType: 'application/pdf', base64: btoa('%PDF-original') }],
+    });
+  });
+
+  it('never sends raw PDF bytes as text when extraction is missing', async () => {
+    const c = await createConversation({ mode: 'ask' });
+    const f = await file(c.id, 'broken.pdf', 'application/pdf', '%PDF-raw');
+    const parts = await attachmentParts([f], { conversationId: c.id, wrap, contextWindow: 150_000, vision: false });
+    expect(JSON.stringify(parts)).not.toContain('%PDF-raw');
+    expect((await readAttachment({ id: f.id }, { conversationId: c.id, wrap })).isError).toBe(true);
   });
 });

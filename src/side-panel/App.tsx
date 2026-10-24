@@ -13,6 +13,7 @@ import { PanelClient, panelTabId } from './client';
 import { Composer, pickModel, sameModel } from './Composer';
 import type { LauncherItem, ModelChoice, PendingFile } from './Composer';
 import { attachmentKind, MAX_FILE } from '@src/store/attachments';
+import { PdfExtractionError } from '@src/ui/pdf-text';
 import { voiceLanguage, voiceSetup } from '@src/ui/voice';
 import { transcribeAudio } from '@src/llm/transcribe';
 import { newId, putBlob } from '@src/store/conversations';
@@ -30,10 +31,13 @@ import type { PanelCommand } from '@src/ui/protocol';
 import en from '@src/ui/locales/en.json';
 import { installTestHook } from './test-hook';
 import type { SavedShortcut } from '@src/store/shortcuts';
+import { shortcutPrompt } from '@src/store/shortcuts';
 import { useShortcuts } from '@src/ui/shortcuts';
 import { AutoNotice } from '@src/ui/auto-notice';
 import { HistoryIcon, LogoMark, NewChatIcon, SettingsIcon } from '@src/ui/icons';
 import { websiteUrl } from '@src/ui/links';
+import { requestWorkspace } from '@src/ui/workspace-protocol';
+import type { WorkspaceProject } from '@src/ui/workspace-protocol';
 
 const NO_PROVIDERS: ProviderConfig[] = [];
 const NO_KEYS: Record<string, string> = {};
@@ -100,6 +104,7 @@ export function App() {
   /** Files attached to the next message, already in the blob store. */
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState(0);
   // Selections arrive from the context menu as quote chips for the next message.
   const [quotes, setQuotes] = useState<Array<{ text: string; url: string; title: string }>>([]);
   const quotesTaken = useRef(0);
@@ -126,6 +131,7 @@ export function App() {
    */
   const attach = async (list: File[]) => {
     setAttachError(null);
+    setPendingAttachments(count => count + 1);
     for (const file of list) {
       const kind = attachmentKind(file.name, file.type);
       if ('refused' in kind) {
@@ -138,9 +144,22 @@ export function App() {
       }
       const ref = { id: newId(), name: file.name || 'pasted-image.png', mimeType: file.type, size: file.size };
       try {
-        await putBlob({ ...ref, conversationId: '', data: file, createdAt: new Date().toISOString() });
-      } catch {
-        setAttachError(t('composer.attachFailed', { name: file.name }));
+        const pdf = kind.kind === 'pdf' ? await (await import('./pdf')).extractPdf(file) : undefined;
+        await putBlob({ ...ref, conversationId: '', data: file, pdf, createdAt: new Date().toISOString() });
+        if (pdf?.truncated) {
+          setAttachError(
+            t('attach.pdf.truncated', {
+              name: file.name,
+              pages: pdf.pages,
+              totalPages: pdf.totalPages,
+              chars: pdf.text.length,
+            }),
+          );
+        }
+      } catch (error) {
+        const key =
+          error instanceof PdfExtractionError ? (`attach.pdf.${error.code}` as const) : 'composer.attachFailed';
+        setAttachError(t(key, { name: file.name }));
         continue;
       }
       setFiles(current => [
@@ -148,6 +167,7 @@ export function App() {
         { ref, ...(kind.kind === 'image' ? { preview: URL.createObjectURL(file) } : {}) },
       ]);
     }
+    setPendingAttachments(count => count - 1);
   };
   useEffect(() => {
     if (state.returned.length) setDraft(state.returned.map(q => q.text).join('\n'));
@@ -283,7 +303,7 @@ export function App() {
     text: string,
     extra: { mode?: PermissionMode; model?: ModelRef; startUrl?: string; shortcut?: true } = {},
   ): void => {
-    if (!client) return;
+    if (!client || pendingAttachments > 0) return;
     // `/compact` compacts the conversation now, or at the next turn boundary of a run.
     if (text.trim() === '/compact') {
       if (state.conversationId) client.send({ type: 'compact', conversationId: state.conversationId });
@@ -329,12 +349,17 @@ export function App() {
   };
 
   const runShortcut = (s: SavedShortcut) => {
+    if (pendingAttachments > 0) return;
     if (!model) return;
     if (!active && s.mode === 'auto' && mode !== 'auto' && !settings.autoNoticeShown) setAutoNotice(true);
-    sendMessage(s.text, active ? {} : { mode: s.mode, model: s.model, startUrl: s.startUrl, shortcut: true });
+    sendMessage(
+      shortcutPrompt(s),
+      active ? {} : { mode: s.mode, model: s.model, startUrl: s.startUrl, shortcut: true },
+    );
   };
 
   const onLaunch = (item: LauncherItem) => {
+    if (pendingAttachments > 0) return;
     if (item.kind === 'shortcut') runShortcut(item.shortcut);
     else sendMessage(`/${item.command}`);
   };
@@ -365,6 +390,13 @@ export function App() {
         {/* The title is for screen readers only; the header shows the mark and three buttons. */}
         <h1 className="sr-only">{conversation?.title || t('panel.newChat')}</h1>
         <span className="flex-1" />
+        <button
+          type="button"
+          className="rounded-lg px-2 py-1 text-xs text-nb-muted hover:bg-nb-surface"
+          aria-label={t('workspace.title')}
+          onClick={() => openWorkspace(state.conversationId)}>
+          {t('workspace.projects')}
+        </button>
         <IconButton label={t('panel.newChat')} onClick={() => newChat(confirmNewChat)}>
           <NewChatIcon />
         </IconButton>
@@ -380,6 +412,9 @@ export function App() {
           <SettingsIcon />
         </IconButton>
       </header>
+      {conversation?.projectId ? (
+        <ProjectBadge projectId={conversation.projectId} conversationId={conversation.id} />
+      ) : null}
       {confirmNewChat ? (
         <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
           <span className="flex-1">{t('panel.newChatRunning')}</span>
@@ -475,7 +510,8 @@ export function App() {
       <RunBar
         status={state.status}
         onContinue={() => state.conversationId && startRun({ type: 'continue', conversationId: state.conversationId })}
-        onResume={() => state.conversationId && startRun({ type: 'resume', conversationId: state.conversationId })}
+        onResume={() => state.conversationId && openWorkspace(state.conversationId, true)}
+        onPause={() => state.conversationId && client?.send({ type: 'pause', conversationId: state.conversationId })}
       />
       <QueueList
         items={state.queue}
@@ -507,6 +543,11 @@ export function App() {
             {/* The What's new card comes first; the notices below still show under it. The rating card waits for it (useRatingCard). */}
             {whatsNew ? <WhatsNewCard release={whatsNew} /> : null}
             {ratingCard ? <RatingCard /> : null}
+            {pendingAttachments > 0 ? (
+              <p className="text-xs text-nb-muted" role="status">
+                {t('attach.pdf.reading')}
+              </p>
+            ) : null}
             {attachError ? (
               <p className="text-xs text-amber-700 dark:text-amber-300" role="alert">
                 {attachError}
@@ -564,6 +605,7 @@ export function App() {
         onRemoveQuote={index => setQuotes(current => current.filter((_, i) => i !== index))}
         transcribe={transcribe}
         onOpenSettings={section => void chrome.tabs.create({ url: chrome.runtime.getURL(`/options.html#${section}`) })}
+        attachmentsPending={pendingAttachments > 0}
         onAttach={list => void attach(list)}
         onScreenshot={() =>
           client?.send({ type: 'screenshot-tab', tabId: client.tabId, conversationId: state.conversationId })
@@ -582,6 +624,38 @@ export function App() {
         onReasoning={next => model && choose({ model, reasoning: next })}
       />
     </div>
+  );
+}
+
+function openWorkspace(conversationId: string | null, resume = false): void {
+  const query = conversationId
+    ? `?conversationId=${encodeURIComponent(conversationId)}${resume ? '&resume=1' : ''}`
+    : '';
+  void chrome.tabs.create({ url: chrome.runtime.getURL(`/workspace.html${query}`) });
+}
+
+function ProjectBadge({ projectId, conversationId }: { projectId: string; conversationId: string }) {
+  const [name, setName] = useState('');
+  useEffect(() => {
+    let current = true;
+    void requestWorkspace<WorkspaceProject>({ op: 'project', projectId })
+      .then(result => {
+        if (current) setName(result.project.name);
+      })
+      .catch(() => {
+        if (current) setName('');
+      });
+    return () => {
+      current = false;
+    };
+  }, [projectId]);
+  return (
+    <button
+      type="button"
+      onClick={() => openWorkspace(conversationId)}
+      className="truncate border-b border-nb-border/60 px-3 py-1 text-left text-xs text-nb-muted">
+      {t('workspace.savedProject')}: {name || t('workspace.title')}
+    </button>
   );
 }
 

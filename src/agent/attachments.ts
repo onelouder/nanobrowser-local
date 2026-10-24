@@ -2,7 +2,7 @@
 // the newest user message's files are added: a text file inside the boundary with the label `source=attachment «name»`,
 // up to a budget scaled to the window; an image after its fixed line. `read_attachment` pages through the rest.
 import { quote, siteOf } from '@src/browser-control';
-import { getBlob } from '@src/store/conversations';
+import { getBlobForConversation } from '@src/store/conversations';
 import { attachmentKind } from '@src/store/attachments';
 import type { MessagePart, StoredBlob } from '@src/store/types';
 import { note } from './records';
@@ -48,7 +48,7 @@ export async function attachmentParts(
   const files: StoredBlob[] = [];
   for (const p of parts) {
     if (p.type !== 'attachment' || p.inlined) continue;
-    const blob = await getBlob(p.id);
+    const blob = await getBlobForConversation(p.id, options.conversationId);
     if (blob && blob.conversationId === options.conversationId && 'kind' in attachmentKind(blob.name, blob.mimeType)) {
       files.push(blob);
     }
@@ -72,10 +72,12 @@ export async function attachmentParts(
         out.push({ type: 'image', data: await base64(blob.data), mediaType: blob.mimeType, note: ATTACHED_IMAGE_LINE });
       continue;
     }
-    const text = await blob.data.text();
+    const text = kind.kind === 'pdf' ? blob.pdf?.text : await blob.data.text();
+    if (text === undefined) continue;
     const budget = inlineBudget(options.contextWindow);
     const shown = text.slice(0, budget);
     const lines = [options.wrap(shown, { attachment: blob.name })];
+    if (blob.pdf?.truncated) lines.push(note(pdfTruncation(blob.pdf)));
     if (text.length > budget) {
       lines.push(
         note(
@@ -109,7 +111,7 @@ export const READ_ATTACHMENT_TOOL: AgentTool = {
   source: 'agent',
   group: 'files',
   description:
-    'Read a text file the user attached, from an offset, when its text did not fit in the message or was elided. The id is in the note after the file.',
+    'Read a text file or extracted PDF text the user attached, from an offset, when its text did not fit in the message or was elided. The id is in the note after the file.',
   parameters: {
     type: 'object',
     properties: {
@@ -132,7 +134,8 @@ export async function readAttachment(
   args: Record<string, unknown>,
   options: { conversationId: string; wrap: Wrap },
 ): Promise<{ text: string; isError: boolean }> {
-  const blob: StoredBlob | undefined = typeof args.id === 'string' ? await getBlob(args.id) : undefined;
+  const blob: StoredBlob | undefined =
+    typeof args.id === 'string' ? await getBlobForConversation(args.id, options.conversationId) : undefined;
   if (!blob || blob.conversationId !== options.conversationId) {
     return {
       text: 'error NOT_FOUND (nothing dispatched)\nNo attachment with this id in this conversation.',
@@ -140,13 +143,13 @@ export async function readAttachment(
     };
   }
   const kind = attachmentKind(blob.name, blob.mimeType);
-  if (!('kind' in kind) || kind.kind !== 'text') {
+  if (!('kind' in kind) || kind.kind === 'image' || (kind.kind === 'pdf' && !blob.pdf)) {
     return {
-      text: `error INVALID_ARGUMENT (nothing dispatched)\n${quote(blob.name, 120)} is not a text file.`,
+      text: `error INVALID_ARGUMENT (nothing dispatched)\n${quote(blob.name, 120)} has no readable text.`,
       isError: true,
     };
   }
-  const text = await blob.data.text();
+  const text = blob.pdf ? blob.pdf.text : await blob.data.text();
   const offset = Math.max(0, Math.min(Number(args.offset ?? 0) || 0, text.length));
   const max = Math.max(500, Math.min(Number(args.maxChars ?? 6_000) || 6_000, 7_000));
   const slice = text.slice(offset, offset + max);
@@ -155,6 +158,7 @@ export async function readAttachment(
     text: [
       `read_attachment · ${quote(blob.name, 120)} · characters ${offset} to ${end} of ${text.length}`,
       options.wrap(slice, { attachment: blob.name }),
+      ...(blob.pdf?.truncated ? [note(pdfTruncation(blob.pdf))] : []),
       ...(end < text.length ? [`… ${text.length - end} more characters; read on with offset ${end}.`] : []),
     ].join('\n'),
     isError: false,
@@ -169,10 +173,14 @@ export async function attachmentBytes(
   if (!Array.isArray(ids) || !ids.length) return { error: 'Give the ids of attached files in attachmentIds.' };
   const files = [];
   for (const id of ids) {
-    const blob = typeof id === 'string' ? await getBlob(id) : undefined;
+    const blob = typeof id === 'string' ? await getBlobForConversation(id, conversationId) : undefined;
     if (!blob || blob.conversationId !== conversationId)
       return { error: `No attached file with id ${quote(String(id), 80)} in this conversation.` };
     files.push({ name: blob.name, mimeType: blob.mimeType, base64: await base64(blob.data) });
   }
   return { files };
+}
+
+function pdfTruncation(pdf: NonNullable<StoredBlob['pdf']>): string {
+  return `PDF extraction was truncated: ${pdf.pages} of ${pdf.totalPages} pages, ${pdf.text.length} characters. The original file is preserved; text beyond these limits was not extracted.`;
 }

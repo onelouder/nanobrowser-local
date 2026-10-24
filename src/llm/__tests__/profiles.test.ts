@@ -34,3 +34,24 @@ describe('model profiles', () => {
     expect(requestOutputLimit(resolveProfile({ kind: 'anthropic', modelName: 'claude-sonnet-5-5' }))).toBe(16_384);
   });
 });
+
+describe('editable output budgets', () => {
+  const profile = resolveProfile({
+    kind: 'openai-compatible',
+    modelName: 'local',
+    overrides: { contextWindow: 150_000, maxOutput: 131_072, outputLimit: 65_536 },
+  });
+
+  it('honors explicit budgets above 16k and a quarter of context', () => {
+    expect(requestOutputLimit(profile)).toBe(65_536);
+  });
+
+  it('bounds output by the model capability and effective context', () => {
+    expect(requestOutputLimit({ ...profile, outputLimit: 200_000 })).toBe(131_072);
+    expect(requestOutputLimit(profile, 32_768)).toBe(32_767);
+  });
+
+  it('honors explicit budgets below the old 1024-token minimum', () => {
+    expect(requestOutputLimit({ ...profile, outputLimit: 128 })).toBe(128);
+  });
+});

@@ -3,7 +3,7 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import { getConversation, updateConversation } from '@src/store/conversations';
+import { createConversation, getConversation, updateConversation } from '@src/store/conversations';
 import { closeDb, db } from '@src/store/db';
 import {
   capabilityOf,
@@ -16,7 +16,7 @@ import {
   type ProviderConfig,
   type Settings,
 } from '@src/store/settings';
-import { livePair } from '../models';
+import { livePair, resolveModel } from '../models';
 
 /** A chrome.storage with a local and a session area, as plain maps. */
 function fakeChrome(local: Record<string, unknown> = {}) {
@@ -182,5 +182,75 @@ describe('the conversation record', () => {
     const stored = await getConversation('c');
     expect(stored?.title).toBe('u');
     expect(stored).not.toHaveProperty('model');
+  });
+});
+
+describe('provider request limits', () => {
+  it.each(['openai-compatible', 'openai', 'anthropic'] as const)(
+    'defaults %s to four concurrent requests',
+    async kind => {
+      fakeChrome({ 'nb.providers': [{ id: 'p', kind, name: 'P', models: [{ name: 'm' }] }] });
+      const resolved = await resolveModel({ model: { providerId: 'p', model: 'm' }, reasoning: 'none' });
+      expect(resolved.chat.spec.maxConcurrent).toBe(4);
+    },
+  );
+
+  it('uses the configured limit and keeps aliases in the same queue', async () => {
+    const provider: ProviderConfig = {
+      id: 'lan',
+      kind: 'openai-compatible',
+      name: 'LAN',
+      baseUrl: 'http://lan/v1',
+      maxConcurrent: 6,
+      concurrencyGroup: 'local',
+      models: [{ name: 'm' }],
+    };
+    fakeChrome({ 'nb.providers': [provider, { ...provider, id: 'vpn', baseUrl: 'http://vpn/v1' }] });
+    for (const providerId of ['lan', 'vpn']) {
+      const resolved = await resolveModel({ model: { providerId, model: 'm' }, reasoning: 'none' });
+      expect(resolved.chat.spec).toMatchObject({ maxConcurrent: 6, concurrencyGroup: 'local' });
+    }
+  });
+
+  it('honors the lowest limit if stored aliases disagree', async () => {
+    const provider: ProviderConfig = {
+      id: 'lan',
+      kind: 'openai-compatible',
+      name: 'LAN',
+      maxConcurrent: 6,
+      concurrencyGroup: 'local',
+      models: [{ name: 'm' }],
+    };
+    fakeChrome({ 'nb.providers': [provider, { ...provider, id: 'vpn', maxConcurrent: 2 }] });
+    const resolved = await resolveModel({ model: { providerId: 'lan', model: 'm' }, reasoning: 'none' });
+    expect(resolved.chat.spec.maxConcurrent).toBe(2);
+  });
+});
+
+describe('durable workspace model choices', () => {
+  it('keeps the chosen model and effort after session storage is lost', async () => {
+    fakeChrome({
+      'nb.providers': PROVIDERS,
+      'nb.settings': settings({ defaultModel: { providerId: 'o', model: 'gpt-4o' } }),
+    });
+    const c = await createConversation({ mode: 'ask' });
+    const pair = { model: { providerId: 'a', model: 'claude-x' }, reasoning: 'high' as const };
+    await updateConversation(c.id, {
+      resumeConfig: { ...pair, turnCap: 100, errorCap: 4, noEffectCap: 4, contextWindow: 150000, maxOutput: 10000 },
+    });
+    expect(await livePair(c.id)).toEqual(pair);
+    fakeChrome({ 'nb.providers': [], 'nb.settings': settings({}) });
+    expect(await livePair(c.id)).toEqual(pair);
+    await expect(resolveModel(await livePair(c.id))).rejects.toThrow('no longer configured');
+  });
+
+  it('requires an explicit local model choice for imported sessions', async () => {
+    fakeChrome({
+      'nb.providers': PROVIDERS,
+      'nb.settings': settings({ defaultModel: { providerId: 'o', model: 'gpt-4o' } }),
+    });
+    const c = await createConversation({ mode: 'ask' });
+    await updateConversation(c.id, { needsModelSelection: true });
+    expect(await livePair(c.id)).toBeNull();
   });
 });

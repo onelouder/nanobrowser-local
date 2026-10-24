@@ -2,6 +2,7 @@
 // Each write is awaited until its transaction completes, so an entry the caller was told about is on disk (the intent
 // record before a mutation relies on this).
 import { db } from './db';
+import { writeCheckpoint } from './checkpoints';
 import type { Conversation, Entry, EntryBody, PermissionMode, RunRecord, StoredBlob } from './types';
 
 export const TITLE_LENGTH = 60;
@@ -83,13 +84,17 @@ export async function updateConversation(
 /** Deletes a conversation with its entries, attachments and run record. */
 export async function deleteConversation(id: string): Promise<void> {
   const database = await db();
-  const tx = database.transaction(['conversations', 'entries', 'blobs', 'runs'], 'readwrite');
+  const tx = database.transaction(
+    ['conversations', 'entries', 'blobs', 'runs', 'checkpoints', 'runHistory'],
+    'readwrite',
+  );
   await tx.objectStore('conversations').delete(id);
-  for (const store of ['entries', 'blobs'] as const) {
+  for (const store of ['entries', 'blobs', 'runHistory'] as const) {
     const keys = await tx.objectStore(store).index('conversationId').getAllKeys(id);
     for (const key of keys) await tx.objectStore(store).delete(key);
   }
   await tx.objectStore('runs').delete(id);
+  await tx.objectStore('checkpoints').delete(id);
   await tx.done;
 }
 
@@ -100,10 +105,10 @@ export async function deleteConversation(id: string): Promise<void> {
 export async function appendEntry<T extends EntryBody>(
   conversationId: string,
   body: T,
-  options: { parentId?: string | null; keepLeaf?: boolean; id?: string } = {},
+  options: { parentId?: string | null; keepLeaf?: boolean; id?: string; checkpoint?: RunRecord } = {},
 ): Promise<Entry & T> {
   const database = await db();
-  const tx = database.transaction(['conversations', 'entries'], 'readwrite');
+  const tx = database.transaction(['conversations', 'entries', 'runs', 'checkpoints'], 'readwrite');
   const conversations = tx.objectStore('conversations');
   const conversation = await conversations.get(conversationId);
   if (!conversation) {
@@ -118,7 +123,11 @@ export async function appendEntry<T extends EntryBody>(
     at: now(),
   } as Entry & T;
   await tx.objectStore('entries').put(entry);
-  if (!options.keepLeaf) await conversations.put({ ...current(conversation), leafId: entry.id, updatedAt: entry.at });
+  const updated = options.keepLeaf
+    ? current(conversation)
+    : { ...current(conversation), leafId: entry.id, updatedAt: entry.at };
+  if (!options.keepLeaf) await conversations.put(updated);
+  if (options.checkpoint) await writeCheckpoint(tx, options.checkpoint, updated);
   await tx.done;
   return entry;
 }
@@ -182,8 +191,24 @@ export async function listBlobs(conversationId: string): Promise<StoredBlob[]> {
 
 export async function deleteEverything(): Promise<void> {
   const database = await db();
-  const names = ['conversations', 'entries', 'runs', 'blobs'] as const;
+  const names = [
+    'conversations',
+    'entries',
+    'runs',
+    'blobs',
+    'projects',
+    'checkpoints',
+    'runHistory',
+    'artifacts',
+  ] as const;
   const tx = database.transaction([...names], 'readwrite');
   await Promise.all(names.map(name => tx.objectStore(name).clear()));
   await tx.done;
+}
+
+/** Imported histories retain their words; old attachment IDs resolve only within their own session. */
+export async function getBlobForConversation(id: string, conversationId: string): Promise<StoredBlob | undefined> {
+  const blob = await getBlob(id);
+  if (blob?.conversationId === conversationId) return blob;
+  return (await listBlobs(conversationId)).find(candidate => candidate.sourceIds?.includes(id));
 }

@@ -26,7 +26,12 @@ export function findChrome() {
     );
     const macX64 = mac.replace('chrome-mac-arm64', 'chrome-mac-x64');
     const linux = join(dir, build, 'chrome-linux64', 'chrome');
-    for (const candidate of [mac, macX64, linux]) if (existsSync(candidate)) return candidate;
+    const linuxArm = join(dir, build, 'chrome-linux-arm64', 'chrome');
+    const windows = join(dir, build, 'chrome-win64', 'chrome.exe');
+    const windows32 = join(dir, build, 'chrome-win32', 'chrome.exe');
+    for (const candidate of [mac, macX64, linux, linuxArm, windows, windows32]) {
+      if (existsSync(candidate)) return candidate;
+    }
   }
   throw new Error('Stable Chrome for Testing not found; run pnpm install-chrome or set CHROME_PATH');
 }

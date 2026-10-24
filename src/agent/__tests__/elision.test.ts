@@ -43,6 +43,19 @@ describe('the threshold', () => {
   });
 });
 
+describe('configured context budgets', () => {
+  it('reserves the full configured output budget before compaction', () => {
+    const profile = resolveProfile({
+      kind: 'openai-compatible',
+      modelName: 'local',
+      overrides: { contextWindow: 150_000, maxOutput: 131_072, outputLimit: 65_536 },
+    });
+    expect(hardLimit(profile)).toBe(84_464);
+    expect(contextThreshold(profile)).toBe(84_464);
+    expect(hardLimit(profile, 100_000)).toBe(34_464);
+  });
+});
+
 describe('step 1: elision', () => {
   it('keeps receipts word for word and replaces the page payload with a stub', () => {
     const text = `click · [a2] button «Send» · pointer · dispatched\n${wrap('N1', 'diff: + row')}`;

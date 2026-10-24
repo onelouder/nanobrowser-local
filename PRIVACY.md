@@ -11,29 +11,31 @@ Nanobrowser is licensed under the Apache License 2.0. All source code is public 
 ## What stays in your browser
 
 - Nanobrowser runs entirely in your browser. There is no Nanobrowser server, and no account.
-- Your conversations, attachments, saved shortcuts, custom instructions, site settings and other settings are stored locally in your browser.
+- Your projects, conversations, checkpoints, execution history, retained evidence and files, saved workflows, custom instructions, site notes, site settings and other settings are stored locally in your browser.
+- PDF text is extracted locally in a bundled worker. The original PDF and its extracted text stay in browser storage until their conversation or project copy is deleted. Scanned pages are not sent to an OCR service.
 - Your logins and cookies never leave your browser through Nanobrowser.
 - The values of password, payment-card and one-time-code fields are hidden from the AI model.
 
 ## What is sent to the Nanobrowser team
 
-Nanobrowser sends its developers only the small amounts of data below. Nothing sent has an ID. The daily count cannot be linked from one day to another, and the usage counts name no one. It never includes your pages, the sites you visit, your messages, your files, your keys or your settings' text.
-
-- **A daily count of users** (on by default; turn it off in Settings → Data → **Anonymous daily count**). At most once a day, on a day you use Nanobrowser: the version, the browser (Chrome, Edge or other), the language of the screens, the week you installed Nanobrowser, whether it is the first time this week and this month, and whether you have set up a model or run a task that day.
-- **Usage counts** (on unless you turn them off, on the welcome page or in Settings → Data → **Help improve Nanobrowser**). At most once a day, with the version, the browser and the language of the screens, totals for a past day: how many tasks started, were resumed or continued, and how they ended, how long they were and how much text the model read, which tools ran and which errors happened (as fixed codes), which kind of provider, catalogue model, reasoning effort and mode were used, whether the model can see images, how often features such as attachments, shortcuts, voice input and Retry were used, how often a long conversation was shortened to fit, what you have set up (the kinds of providers, whether the default model runs on your computer, whether voice input and custom instructions are set, how many site rules of each kind you have), and how often confirmation cards were shown, approved or declined, and how often a step was handed to you. If you turned off the "Help improve Nanobrowser" switch of the earlier version, both start off.
-
-This data goes to PostHog, a product analytics service, in the United States. Nanobrowser asks PostHog not to store your IP address or work out your location, and to create no profile of you. The data is kept for one year.
-
-When you remove Nanobrowser, Chrome opens a short optional Google Form that asks why. Nanobrowser fills in nothing in it; you can answer any question or none. Google asks you to sign in, so that each person answers once, but the form does not record who you are.
+This local-inference fork disables analytics and the uninstall survey. It does not send usage statistics to the Nanobrowser team or PostHog.
 
 ## What is sent to the providers you choose
 
 To work, Nanobrowser sends data directly from your browser to the AI providers you set up, and only to them:
 
-- **Your model provider** (for example Anthropic, OpenAI, Google, OpenRouter, or a local server such as Ollama): your messages, your attachments, the content of the tabs the agent works in, and, for models that can see images, screenshots of those tabs.
+- **Your model provider** (for example Anthropic, OpenAI, Google, OpenRouter, or a local server such as Ollama): your messages, text and image attachments, extracted PDF text, custom instructions, project objectives and instructions, explicitly selected project evidence, applicable site notes and selected workflow text, the content of the tabs the agent works in, and, for models that can see images, screenshots of those tabs.
+- **Sites you upload to** receive the original attached file when you ask the agent to upload it, subject to your permission settings. PDF extraction does not upload the original document to your model provider.
 - **Your voice model provider** (OpenAI or Google), only if you turn on voice input: the audio of each recording. Recordings are not kept.
 
-How these providers handle your data is governed by their own privacy policies. If you use a local model, the data stays on your computer.
+How these providers handle your data is governed by their own privacy policies. If you use a local model server, requests go to that server, including when it runs on another computer on your network.
+
+## Project transfers
+
+- Project bundles are downloaded only when you choose Export. They contain project notes, conversation history, retained evidence, file bytes, and recovery metadata. There is no automatic synchronization service.
+- Bundles exclude connection profiles, API keys, live tab bindings, and pending approvals. Import creates a separate project and requires you to choose a model connection on that computer before resuming.
+- Opening or importing a project does not start browser automation. Resuming reopens selected saved pages and observes their current state; browser cookies and unsaved forms are not transferred.
+- Project-owned evidence and generated files remain when an individual session is deleted. Remove those files in the workspace or use Delete everything to remove all project data.
 
 ## API keys
 
@@ -47,8 +49,7 @@ When Nanobrowser updates from its earlier version, it moves your providers and A
 
 ## Your control
 
-- Delete a conversation at any time, or delete all your data in Settings → Data. Your two choices about what is sent stay as you set them.
-- Turn off the daily count and the usage counts at any time in Settings → Data; what was counted and not yet sent is deleted at once.
+- Delete a conversation or individual project files at any time, or delete all your data in Settings → Data.
 - Uninstall the extension to remove all its local data.
 
 ## Changes to this policy
@@ -59,4 +60,4 @@ We may update this policy. Changes are published in the GitHub repository.
 
 Questions or concerns? Contact us at cws@felight.xyz.
 
-Last updated: October 13, 2026
+Last updated: October 23, 2026

@@ -7,6 +7,7 @@ export const LICENCES: Array<{ name: string; licence: string; url: string }> = [
   { name: '@radix-ui/react-dialog', licence: 'MIT', url: 'https://github.com/radix-ui/primitives' },
   { name: 'ai', licence: 'Apache-2.0', url: 'https://github.com/vercel/ai' },
   { name: 'idb', licence: 'ISC', url: 'https://github.com/jakearchibald/idb' },
+  { name: 'pdfjs-dist', licence: 'Apache-2.0', url: 'https://github.com/mozilla/pdf.js' },
   { name: 'puppeteer-core', licence: 'Apache-2.0', url: 'https://github.com/puppeteer/puppeteer' },
   { name: 'react', licence: 'MIT', url: 'https://github.com/facebook/react' },
   { name: 'react-dom', licence: 'MIT', url: 'https://github.com/facebook/react' },

@@ -1,7 +1,7 @@
 // Unattended checks drive the panel through this hook. It exists only in autorun builds (WXT_AUTORUN_URL set);
 // normal builds compile it away, so no message can type into the panel or press its buttons.
 // The options page uses the same hook, addressed as 'options'.
-export function installTestHook(tabId: number, target: 'panel' | 'options' = 'panel'): void {
+export function installTestHook(tabId: number, target: 'panel' | 'options' | 'workspace' = 'panel'): void {
   if (!import.meta.env.WXT_AUTORUN_URL) return;
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.nbTest !== target || (target === 'panel' && message.tabId !== tabId)) return;
@@ -19,7 +19,7 @@ export function installTestHook(tabId: number, target: 'panel' | 'options' = 'pa
         return true;
       }
       case 'click': {
-        const button = [...document.querySelectorAll<HTMLElement>('button, [role="menuitem"]')].find(
+        const button = [...document.querySelectorAll<HTMLElement>('button, summary, [role="menuitem"]')].find(
           b =>
             b.getAttribute('aria-label') === message.label ||
             b.innerText
@@ -41,6 +41,11 @@ export function installTestHook(tabId: number, target: 'panel' | 'options' = 'pa
         if (message.submit) field.form?.requestSubmit();
         return sendResponse({ ok: true });
       }
+      case 'focus': {
+        const field = document.querySelector<HTMLElement>(`[aria-label="${message.label}"]`);
+        field?.focus();
+        return sendResponse({ ok: !!field });
+      }
       case 'field': {
         // A field's type, read-only state and value, by its label.
         const field = document.querySelector<HTMLInputElement>(`input[aria-label="${message.label}"]`);
@@ -48,6 +53,22 @@ export function installTestHook(tabId: number, target: 'panel' | 'options' = 'pa
           ok: !!field,
           ...(field ? { type: field.type, readOnly: field.readOnly, value: field.value } : {}),
         });
+      }
+      case 'workspace-request': {
+        if (target !== 'workspace') return sendResponse({ ok: false });
+        chrome.runtime.sendMessage({ ...message.command, type: 'nb-workspace' }).then(sendResponse);
+        return true;
+      }
+      case 'upload-files': {
+        const field = document.querySelector<HTMLInputElement>(`input[type="file"][aria-label="${message.label}"]`);
+        if (!field) return sendResponse({ ok: false });
+        const transfer = new DataTransfer();
+        for (const file of message.files as Array<{ name: string; type: string; text?: string }>) {
+          transfer.items.add(new File([file.text ?? ''], file.name, { type: file.type }));
+        }
+        field.files = transfer.files;
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+        return sendResponse({ ok: true });
       }
       case 'drop-files': {
         // Files dropped on the composer, as a user would drag them in.

@@ -1,6 +1,6 @@
 // Restoring a run after the worker restarted. Pure: it reads the run record and the branch and says what to write and
 // what to reopen. The worker calls no model and runs no tool on its own; a run continues only when the user acts.
-import type { Entry, EntryOf, PendingPrompt, RunRecord, RunStatus } from '@src/store/types';
+import type { DebtItem, Entry, EntryOf, PendingPrompt, RunRecord, RunStatus } from '@src/store/types';
 import { openCalls } from './records';
 import { kindOf } from './tools';
 
@@ -29,7 +29,7 @@ export function takenOver(run: RunRecord): boolean {
   return (run.status as string) === 'paused';
 }
 
-export function planRestore(run: RunRecord, branch: Entry[]): RestorePlan {
+export function planRestore(run: RunRecord, branch: Entry[], reopenCards = true): RestorePlan {
   const prompt = run.pendingPrompt;
   const handoverCall = prompt?.kind === 'handover' ? prompt.answers?.toolCallId : undefined;
   const calls = openCalls(branch);
@@ -44,9 +44,10 @@ export function planRestore(run: RunRecord, branch: Entry[]): RestorePlan {
   const results: RestorePlan['results'] = [];
   let reopen: RestorePlan['reopen'];
   for (const call of calls) {
-    if (call.toolCallId === handoverCall) continue;
+    if (reopenCards && call.toolCallId === handoverCall) continue;
     // An ask_user question waiting for the user opens again; its answer continues the same call.
     if (
+      reopenCards &&
       call.toolName === 'ask_user' &&
       call.hasIntent &&
       prompt?.kind === 'ask-user' &&
@@ -76,7 +77,12 @@ export function planRestore(run: RunRecord, branch: Entry[]): RestorePlan {
     status = 'interrupted';
     reason = 'The extension restarted during this run.';
   } else if (run.status === 'awaiting_user') {
-    if (prompt?.kind === 'handover' && handoverCall) {
+    if (
+      reopenCards &&
+      prompt?.kind === 'handover' &&
+      handoverCall &&
+      calls.some(call => call.toolCallId === handoverCall)
+    ) {
       // Only the card opens again; the call is answered by the hand-over and never sent again.
       reopen = { ...prompt, toolCallId: handoverCall };
     } else if (!reopen) {
@@ -86,4 +92,21 @@ export function planRestore(run: RunRecord, branch: Entry[]): RestorePlan {
     }
   }
   return { results, status, reason, reopen, note: RESTART_NOTE };
+}
+
+/** An interrupted mutation remains unverified even if the worker stopped before recording its receipt. */
+export function restoreDebt(run: RunRecord, branch: Entry[], plan: RestorePlan): DebtItem[] {
+  const debt = [...run.debt];
+  for (const result of plan.results) {
+    if (!result.text.includes('delivery unknown') || debt.some(item => item.toolCallId === result.toolCallId)) continue;
+    const intent = branch.find(entry => entry.type === 'intent' && entry.toolCallId === result.toolCallId);
+    const args = intent?.type === 'intent' ? (intent.args as { tabId?: number }) : undefined;
+    debt.push({
+      toolCallId: result.toolCallId,
+      tabId: args?.tabId ?? run.tabs[0] ?? -1,
+      state: 'open',
+      label: `${result.toolName}: interrupted before its outcome was recorded`,
+    });
+  }
+  return debt;
 }

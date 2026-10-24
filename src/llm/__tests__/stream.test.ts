@@ -158,3 +158,28 @@ describe('the limit per local server', () => {
     expect(max).toBe(1);
   });
 });
+
+describe('shared backend queues', () => {
+  it.each([
+    ['http://lan/v1', 'http://vpn/v1', 'shared-backend'],
+    ['http://normalized/v1/', 'http://normalized/v1', undefined],
+  ])('shares a slot between %s and %s', async (firstUrl, secondUrl, concurrencyGroup) => {
+    let inFlight = 0;
+    let maximum = 0;
+    const scripted = new ScriptedModel(() => {
+      inFlight++;
+      maximum = Math.max(maximum, inFlight);
+      return { text: 'ok', delayMs: 20 };
+    });
+    const results = await Promise.all(
+      [firstUrl, secondUrl].map(async baseUrl => {
+        const chat = scripted.chat({ kind: 'openai-compatible', baseUrl, concurrencyGroup, maxConcurrent: 1 });
+        const result = await streamTurn({ chat, system: '', messages: [{ role: 'user', content: 'x' }] });
+        inFlight--;
+        return result;
+      }),
+    );
+    expect(results.every(result => result.text === 'ok')).toBe(true);
+    expect(maximum).toBe(1);
+  });
+});

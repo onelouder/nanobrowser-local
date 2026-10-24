@@ -453,3 +453,16 @@ describe('a page prompt dialog left open by a call', () => {
     expect(layer.calls.some(x => x.tool === 'handle_dialog')).toBe(false);
   });
 });
+
+describe('resumed session observation', () => {
+  it('makes no model request when the fresh observation fails', async () => {
+    const layer = new FakeLayer({ snapshot: () => failed('TAB_CLOSED') });
+    layer.tabsData = {
+      tabs: [{ tabId: 1, url: 'https://example.com/', title: 'Example', active: true }],
+      activeTabId: 1,
+    };
+    const { loop, scripted } = await setup([done()], layer, { requireObservation: true });
+    await expect(loop.run()).rejects.toThrow('could not be observed');
+    expect(scripted.calls).toHaveLength(0);
+  });
+});

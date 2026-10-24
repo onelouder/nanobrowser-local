@@ -26,9 +26,13 @@ import {
   titleFrom,
   updateConversation,
 } from '@src/store/conversations';
-import { DEFAULT_SETTINGS, getLive, removeLive, setLive, settingsStorage } from '@src/store/settings';
+import { DEFAULT_SETTINGS, getLive, providersStorage, removeLive, setLive, settingsStorage } from '@src/store/settings';
+import { archiveRun, getCheckpoint, saveCheckpoint } from '@src/store/checkpoints';
+import { getProject, projectContext, putArtifact } from '@src/store/projects';
+import type { ResumePreview } from '@src/ui/workspace-protocol';
+import { configuredResume, missingSavedTabs, resumableUrl, resumeConfiguration, resumePair, savedTabs } from './resume';
 import { NOTE_LABEL, RunWriter } from '@src/agent/records';
-import { planRestore, RESTART_NOTE, takenOver } from '@src/agent/restore';
+import { planRestore, RESTART_NOTE, restoreDebt, takenOver } from '@src/agent/restore';
 import { runCompaction } from '@src/agent/compaction';
 import { attachmentKind, MAX_CONVERSATION, MAX_FILE } from '@src/agent/attachments';
 import { toModelMessages } from '@src/agent/context';
@@ -41,7 +45,7 @@ import type {
   RunRecord,
   RunStatus,
 } from '@src/store/types';
-import { EMPTY_GUARDS, UNFINISHED, ZERO_USAGE, addUsage } from '@src/store/types';
+import { EMPTY_GUARDS, UNFINISHED, ZERO_USAGE } from '@src/store/types';
 import type { AttachmentRef, PanelCommand, PanelEventBody } from '@src/ui/protocol';
 import { createAgentSession, layerPort } from './agent-session';
 import { TabScope } from './bindings';
@@ -88,6 +92,14 @@ export class RunManager {
   readonly permissions = new Permissions();
   readonly broker: PromptBroker;
   #runs = new Map<string, ActiveRun>();
+  #resuming = new Set<string>();
+  #pausing = new Set<string>();
+  #reopened = new Map<string, Promise<void>>();
+  #restoringTabs = new Set<string>();
+  #closingWindows = new Set<string>();
+  #tabIdentities = new Map<number, string>();
+  #manifestWrites: Promise<void> = Promise.resolve();
+  #restoring: Promise<void> | null = null;
   #sessions = new Map<string, Session>();
   /** The mode of a conversation with a run, read by the page header each turn (the user may change it). */
   #modes = new Map<string, Conversation['mode']>();
@@ -110,7 +122,8 @@ export class RunManager {
   constructor() {
     this.scope = new TabScope({
       blocked: () => this.permissions.blockedSites(),
-      changed: (conversationId, added, removed) => void this.#scopeChanged(conversationId, added, removed),
+      changed: (conversationId, added, removed, windowClosing) =>
+        void this.#scopeChanged(conversationId, added, removed, windowClosing),
     });
     this.border = new PageBorder({
       conversationOf: tabId => this.scope.conversationOf(tabId),
@@ -147,7 +160,13 @@ export class RunManager {
   }
 
   /** The scope changed: the panels get the new list, and a session in a run gains or loses the tab. */
-  async #scopeChanged(conversationId: string, added: number[], removed: number[]): Promise<void> {
+  async #scopeChanged(
+    conversationId: string,
+    added: number[],
+    removed: number[],
+    windowClosing = false,
+  ): Promise<void> {
+    if (windowClosing) this.#closingWindows.add(conversationId);
     void this.border.tabsChanged(added, removed).catch(() => undefined);
     const session = this.#sessions.get(conversationId);
     if (session) {
@@ -155,12 +174,172 @@ export class RunManager {
       for (const tabId of removed) if (session.hasTab(tabId)) await session.unshareTab(tabId).catch(() => undefined);
     }
     this.emit(conversationId, { type: 'tabs', tabs: await this.scope.scopeTabs(conversationId) });
+    if (!this.#restoringTabs.has(conversationId)) await this.#rememberTabs(conversationId);
     // A tab that joined, by @ or by a drag, brings its open panel along: the panel shows the tab's conversation,
     // whichever it showed before.
     for (const connection of this.connections) {
       if (connection.tabId !== null && added.includes(connection.tabId) && connection.conversationId !== conversationId)
         await this.#subscribe(connection, connection.tabId, conversationId);
     }
+  }
+
+  #rememberTabs(conversationId: string): Promise<void> {
+    const write = async () => {
+      const conversation = await getConversation(conversationId);
+      const tabs = await this.scope.scopeTabs(conversationId);
+      if (!conversation || !tabs.length || this.#closingWindows.has(conversationId)) return;
+      const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      const manifest = savedTabs(tabs, conversation.savedTabs ?? [], active?.id, this.#tabIdentities);
+      const present = new Set(manifest.map(tab => tab.id));
+      const missing = (conversation.savedTabs ?? []).filter(tab => !present.has(tab.id));
+      await updateConversation(conversationId, {
+        savedTabs: [...manifest, ...(!this.#runs.has(conversationId) ? missing : [])].slice(0, 50),
+      });
+    };
+    const next = this.#manifestWrites.then(write);
+    this.#manifestWrites = next.catch(() => undefined);
+    return next;
+  }
+
+  async workspacePreview(conversationId: string): Promise<ResumePreview> {
+    const conversation = await getConversation(conversationId);
+    if (!conversation) throw new Error('Session not found.');
+    await this.permissions.ready();
+    const [checkpoint, liveTabs, live, providers, settings, run] = await Promise.all([
+      getCheckpoint(conversationId),
+      this.scope.scopeTabs(conversationId),
+      getLive(conversationId),
+      providersStorage.get(),
+      settingsStorage.get(),
+      getRun(conversationId),
+    ]);
+    const model = conversation.needsModelSelection ? null : resumePair(conversation, live);
+    const currentConfig = configuredResume(model, providers, settings);
+    const tabs = conversation.savedTabs ?? [];
+    return {
+      conversationId,
+      title: conversation.title,
+      status: run?.status ?? conversation.status,
+      checkpoint: checkpoint ?? null,
+      tabs,
+      liveTabs,
+      model,
+      modelAvailable: !!currentConfig,
+      missingTabs: missingSavedTabs(tabs, liveTabs).length,
+      reason: run?.reason,
+      currentConfig,
+      configurationChanged: JSON.stringify(currentConfig) !== JSON.stringify(conversation.resumeConfig),
+      blockedTabs: tabs.filter(tab => !resumableUrl(tab.url, this.permissions.blockedSites())).map(tab => tab.url),
+    };
+  }
+
+  async workspacePause(conversationId: string): Promise<void> {
+    const completion = this.#runs.get(conversationId)?.done ?? this.#reopened.get(conversationId);
+    if (!completion) return;
+    this.#pausing.add(conversationId);
+    this.#stop(conversationId);
+    await completion;
+    this.#pausing.delete(conversationId);
+  }
+
+  async workspaceOpen(conversationId: string): Promise<number> {
+    const conversation = await getConversation(conversationId);
+    if (!conversation) throw new Error('Session not found.');
+    const live = await this.scope.scopeTabs(conversationId);
+    if (live.length) {
+      await chrome.tabs.update(live[0].tabId, { active: true });
+      return live[0].tabId;
+    }
+    await this.permissions.ready();
+    const saved = conversation.savedTabs?.[0];
+    if (saved && !resumableUrl(saved.url, this.permissions.blockedSites())) throw new Error('This site is blocked.');
+    const tab = await chrome.tabs.create({ url: saved?.url ?? 'about:blank', active: true });
+    if (saved) this.#tabIdentities.set(tab.id!, saved.id);
+    const bound = await this.scope.add(conversationId, tab.id!, saved?.origin ?? 'start');
+    if (!bound.ok) throw new Error(`The session tab could not be opened: ${bound.reason}.`);
+    return tab.id!;
+  }
+
+  async workspaceResume(conversationId: string, options: { model?: LivePair; reopenTabs: boolean }): Promise<void> {
+    if (this.#resuming.has(conversationId) || this.#runs.has(conversationId)) return;
+    this.#resuming.add(conversationId);
+    try {
+      await this.#restoring;
+      const conversation = await getConversation(conversationId);
+      if (!conversation) throw new Error('Session not found.');
+      if (conversation.projectId && (await getProject(conversation.projectId))?.archived)
+        throw new Error('Restore this project before resuming its sessions.');
+      if (conversation.needsModelSelection && !options.model)
+        throw new Error('Choose a model for this imported session.');
+      const pair = options.model ?? resumePair(conversation, await getLive(conversationId));
+      const current = configuredResume(pair, await providersStorage.get(), await settingsStorage.get());
+      if (!pair || !current) throw new ModelUnavailable('Choose an available model before resuming this session.');
+      const previous = await getRun(conversationId);
+      if (previous?.status === 'awaiting_user')
+        throw new Error('Answer the open question in the session before continuing.');
+      const ownedBefore = new Set((await this.scope.scopeTabs(conversationId)).map(tab => tab.tabId));
+      await this.#reconnectTabs(conversation, options.reopenTabs);
+      await this.#writeLive(conversationId, pair);
+      const branch = previous ? await activeBranch(conversationId) : [];
+      const recovery = previous ? planRestore(previous, branch, false) : undefined;
+      const recoveredDebt = previous && recovery ? restoreDebt(previous, branch, recovery) : [];
+      if (recovery) {
+        const writer = new RunWriter(conversationId, previous!.runId);
+        for (const result of recovery.results) {
+          await writer.toolResult(result.toolCallId, result.toolName, result.text, true, undefined, undefined, {
+            debt: recoveredDebt,
+          });
+        }
+      }
+      const restore = previous && {
+        ...previous,
+        pendingPrompt: undefined,
+        debt: recoveredDebt.map(d =>
+          ownedBefore.has(d.tabId) ? d : { ...d, state: 'unverifiable' as const, tabId: -1 },
+        ),
+      };
+      await new RunWriter(conversationId, 'resume').appNote(
+        'the user resumed this session. Browser state must be observed again; do not replay earlier writes.',
+      );
+      this.#launch(conversationId, restore, pair);
+    } finally {
+      this.#resuming.delete(conversationId);
+    }
+  }
+
+  async #prepareResume(connection: PanelConnection, conversationId: string): Promise<boolean> {
+    const conversation = await getConversation(conversationId);
+    if (conversation?.savedTabs?.length) return true;
+    return this.#takeUp(connection, conversationId);
+  }
+
+  async #reconnectTabs(conversation: Conversation, reopen: boolean): Promise<void> {
+    await this.permissions.ready();
+    const live = await this.scope.scopeTabs(conversation.id);
+    const missing = missingSavedTabs(conversation.savedTabs ?? [], live);
+    if (!live.length && !missing.length && conversation.status === 'idle') {
+      await this.workspaceOpen(conversation.id);
+      return;
+    }
+    if (!live.length && !reopen) throw new Error('Reopen the saved pages or open this session in a browser tab first.');
+    if (!reopen) return;
+    if (missing.some(tab => !resumableUrl(tab.url, this.permissions.blockedSites()))) {
+      throw new Error('A saved page is blocked or cannot be reopened. Review the session pages first.');
+    }
+    this.#restoringTabs.add(conversation.id);
+    try {
+      for (const saved of missing) {
+        const tab = await chrome.tabs.create({ url: saved.url, active: !!saved.active });
+        this.#tabIdentities.set(tab.id!, saved.id);
+        const bound = await this.scope.add(conversation.id, tab.id!, saved.origin);
+        if (!bound.ok) throw new Error(`A saved tab could not be restored: ${bound.reason}.`);
+      }
+      if (!live.length && !missing.length) await this.workspaceOpen(conversation.id);
+    } finally {
+      this.#restoringTabs.delete(conversation.id);
+    }
+    this.#closingWindows.delete(conversation.id);
+    await this.#rememberTabs(conversation.id);
   }
 
   /** A panel of the conversation is open and the user is on one of its tabs. */
@@ -194,7 +373,8 @@ export class RunManager {
     this.#runs.get(conversationId)?.controller.abort();
     this.broker.withdrawAll(conversationId);
     const returned = this.#queues.get(conversationId)?.splice(0) ?? [];
-    this.#emitQueue(conversationId, returned);
+    if (this.#runs.has(conversationId)) this.#emitQueue(conversationId, returned);
+    else this.emit(conversationId, { type: 'queue', items: [], returned });
   }
 
   #conversationOfSessionTab(tabId: number): string | null {
@@ -205,6 +385,7 @@ export class RunManager {
   /** A card opened or closed: the run waits for the user while one is open. */
   async #waiting(conversationId: string, open: boolean): Promise<void> {
     const record = this.#records.get(conversationId);
+    if (this.#pausing.has(conversationId)) return;
     if (!record || !this.#runs.has(conversationId)) return;
     // The card a run waits on is kept in its record, so a restart knows what to open again. The hand-over's own record,
     // with the call's partial result, is written by the loop.
@@ -316,6 +497,16 @@ export class RunManager {
    * answers it, or presses Resume.
    */
   async restore(): Promise<void> {
+    if (this.#restoring) return this.#restoring;
+    this.#restoring = this.#restoreRuns();
+    try {
+      await this.#restoring;
+    } finally {
+      this.#restoring = null;
+    }
+  }
+
+  async #restoreRuns(): Promise<void> {
     for (const run of await listRuns()) {
       if (this.#runs.has(run.conversationId)) continue;
       if (!(UNFINISHED.has(run.status) || takenOver(run))) {
@@ -325,14 +516,26 @@ export class RunManager {
       }
       const conversationId = run.conversationId;
       const branch = await activeBranch(conversationId);
-      const plan = planRestore(run, branch);
+      const request = run.pendingPrompt?.request as { tabId?: number } | undefined;
+      const liveTabs = await this.scope.scopeTabs(conversationId);
+      const ownsPrompt = request?.tabId === undefined || liveTabs.some(tab => tab.tabId === request.tabId);
+      const plan = planRestore(run, branch, ownsPrompt);
       const writer = new RunWriter(conversationId, run.runId);
+      const debt = restoreDebt(run, branch, plan);
       for (const r of plan.results) {
         const delivered = r.text.includes('delivery unknown') ? 'unknown' : false;
-        await writer.toolResult(r.toolCallId, r.toolName, r.text, true, {
-          ok: false,
-          error: { code: 'INTERRUPTED', message: r.text, delivered, hint: '' },
-        });
+        await writer.toolResult(
+          r.toolCallId,
+          r.toolName,
+          r.text,
+          true,
+          {
+            ok: false,
+            error: { code: 'INTERRUPTED', message: r.text, delivered, hint: '' },
+          },
+          undefined,
+          { debt },
+        );
       }
       // One note per restart, not one per wake-up of the worker: an interrupted run can wait a long time.
       const last = [...branch].reverse().find(e => e.type === 'message');
@@ -347,9 +550,11 @@ export class RunManager {
         ...run,
         status: plan.status,
         reason: plan.reason,
+        debt,
         pendingPrompt: plan.reopen ? run.pendingPrompt : undefined,
       };
-      await putRun(record);
+      await saveCheckpoint(record);
+      if (plan.status === 'interrupted') await archiveRun(record);
       // A run the restart ended is counted once, as interrupted; one already interrupted was counted before.
       if (plan.status === 'interrupted' && run.status !== 'interrupted') runEnded(record, {});
       await updateConversation(conversationId, { status: plan.status });
@@ -366,7 +571,12 @@ export class RunManager {
         conversationId,
         [...this.connections].find(c => c.conversationId === conversationId),
       );
-      if (plan.reopen) void this.#reopen(conversationId, record, plan.reopen);
+      if (plan.reopen) {
+        const reopened = this.#reopen(conversationId, record, plan.reopen).finally(() =>
+          this.#reopened.delete(conversationId),
+        );
+        this.#reopened.set(conversationId, reopened);
+      }
     }
     await this.#watchdog();
   }
@@ -428,6 +638,7 @@ export class RunManager {
           { ...record, pendingPrompt: undefined },
           'interrupted',
           'The tab of the hand-over is gone.',
+          { pendingPrompt: undefined },
         );
         return;
       }
@@ -455,8 +666,14 @@ export class RunManager {
           .filter(Boolean)
           .join('\n');
       }
-      await writer.toolResult(toolCallId, toolName, text, answer !== 'given-back', partial);
-      await putRun({ ...record, pendingPrompt: undefined });
+      await writer.toolResult(toolCallId, toolName, text, answer !== 'given-back', partial, undefined, {
+        pendingPrompt: undefined,
+        status: this.#pausing.has(conversationId) ? 'suspended' : 'interrupted',
+      });
+      if (answer === 'withdrawn')
+        await this.#setStatus(record, this.#pausing.has(conversationId) ? 'suspended' : 'interrupted', undefined, {
+          pendingPrompt: undefined,
+        });
       if (answer === 'given-back' || answer === 'cancelled') this.#launch(conversationId, record);
       return;
     }
@@ -473,9 +690,15 @@ export class RunManager {
       const text = continued
         ? ['ask_user · the user continued', ...(answer.data !== undefined ? [`answer: ${answer.data}`] : [])].join('\n')
         : 'error USER_DECLINED (nothing dispatched)\nThe user cancelled the step.';
-      await writer.toolResult(toolCallId, toolName, text, !continued);
-      await putRun({ ...record, pendingPrompt: undefined });
-      if (answer !== 'withdrawn') this.#launch(conversationId, record);
+      await writer.toolResult(toolCallId, toolName, text, !continued, undefined, undefined, {
+        pendingPrompt: undefined,
+        status: this.#pausing.has(conversationId) ? 'suspended' : 'interrupted',
+      });
+      if (answer === 'withdrawn')
+        await this.#setStatus(record, this.#pausing.has(conversationId) ? 'suspended' : 'interrupted', undefined, {
+          pendingPrompt: undefined,
+        });
+      else this.#launch(conversationId, record);
     }
   }
 
@@ -485,6 +708,8 @@ export class RunManager {
         return this.#subscribe(connection, command.tabId, command.conversationId, command.sinceSeq);
       case 'send':
         return this.#send(connection, command);
+      case 'pause':
+        return this.workspacePause(command.conversationId);
       case 'stop':
         this.#stop(command.conversationId);
         return;
@@ -505,15 +730,11 @@ export class RunManager {
         return;
       }
       case 'continue':
-        if (!(await this.#takeUp(connection, command.conversationId))) return;
-        return this.#continue(command.conversationId, 'capped', 'the user pressed Continue; go on with the task.');
+        if (!(await this.#prepareResume(connection, command.conversationId))) return;
+        return this.workspaceResume(command.conversationId, { reopenTabs: false });
       case 'resume':
-        if (!(await this.#takeUp(connection, command.conversationId))) return;
-        return this.#continue(
-          command.conversationId,
-          'interrupted',
-          'the user resumed the run; observe before acting.',
-        );
+        if (!(await this.#prepareResume(connection, command.conversationId))) return;
+        return this.workspaceResume(command.conversationId, { reopenTabs: true });
       case 'answer':
         await this.broker.answer(command.promptId, command.answer);
         return;
@@ -781,7 +1002,7 @@ export class RunManager {
 
   async snapshot(conversationId: string): Promise<PanelEventBody> {
     const conversation = (await getConversation(conversationId)) ?? null;
-    const live = await getLive(conversationId);
+    const live = conversation ? resumePair(conversation, await getLive(conversationId)) : null;
     const branch = await activeBranch(conversationId);
     const run = await getRun(conversationId);
     return {
@@ -799,6 +1020,20 @@ export class RunManager {
   }
 
   async #send(connection: PanelConnection, command: Extract<PanelCommand, { type: 'send' }>): Promise<void> {
+    const id = command.conversationId;
+    if (id && this.#resuming.has(id)) {
+      this.journal.direct(id, connection.sink, { type: 'error', message: 'run.stopFirst' });
+      return;
+    }
+    if (id) this.#resuming.add(id);
+    try {
+      await this.#sendNow(connection, command);
+    } finally {
+      if (id) this.#resuming.delete(id);
+    }
+  }
+
+  async #sendNow(connection: PanelConnection, command: Extract<PanelCommand, { type: 'send' }>): Promise<void> {
     const text = command.text.trim();
     if (!text && !command.attachments.length && !command.context.some(c => c.kind === 'selection')) return;
     // A shortcut's start page is a web address on a site the user has not blocked.
@@ -909,6 +1144,10 @@ export class RunManager {
         warnings.push(`${blob.name}: ${kind.refused}`);
         continue;
       }
+      if (kind.kind === 'pdf' && !blob.pdf?.text) {
+        warnings.push(`${blob.name} has no extracted PDF text. Attach it again.`);
+        continue;
+      }
       if (blob.size > MAX_FILE) {
         warnings.push(`${blob.name} is larger than 25 MB and was not attached.`);
         continue;
@@ -920,6 +1159,21 @@ export class RunManager {
         }
         total += blob.size;
         await putBlob({ ...blob, conversationId });
+        if (conversation.projectId) {
+          try {
+            await putArtifact({
+              projectId: conversation.projectId,
+              conversationId,
+              kind: 'file',
+              name: blob.name,
+              mimeType: blob.mimeType,
+              data: blob.data,
+              pdf: blob.pdf,
+            });
+          } catch (error) {
+            warnings.push(`${blob.name} is attached, but could not be retained in the project: ${String(error)}`);
+          }
+        }
       }
       if (kind.kind === 'image' && !vision) {
         warnings.push(`This model cannot see images: ${blob.name} is kept with the conversation but not sent.`);
@@ -934,6 +1188,25 @@ export class RunManager {
    * The old branch stays in the tree.
    */
   async #rebranch(
+    connection: PanelConnection,
+    conversationId: string,
+    kind: 'edit' | 'restart' | 'retry',
+    entryId?: string,
+    text?: string,
+  ): Promise<void> {
+    if (this.#resuming.has(conversationId) || this.#runs.has(conversationId)) {
+      this.journal.direct(conversationId, connection.sink, { type: 'error', message: 'run.stopFirst' });
+      return;
+    }
+    this.#resuming.add(conversationId);
+    try {
+      await this.#rebranchNow(connection, conversationId, kind, entryId, text);
+    } finally {
+      this.#resuming.delete(conversationId);
+    }
+  }
+
+  async #rebranchNow(
     connection: PanelConnection,
     conversationId: string,
     kind: 'edit' | 'restart' | 'retry',
@@ -1038,6 +1311,25 @@ export class RunManager {
         isError: true,
       };
     }
+    const conversation = await getConversation(conversationId);
+    let projectWarning = '';
+    if (conversation?.projectId) {
+      try {
+        await putArtifact({
+          projectId: conversation.projectId,
+          conversationId,
+          runId: this.#runs.get(conversationId)?.runId,
+          kind: 'file',
+          name: saved.name,
+          mimeType: check.mimeType,
+          data: new Blob([content], { type: check.mimeType }),
+        });
+      } catch {
+        projectWarning =
+          ' The download completed, but its project copy could not be saved. Check available browser storage.';
+        await this.#notice(conversationId, projectWarning.trim(), 'error');
+      }
+    }
     const entry = await appendEntry(conversationId, {
       type: 'ui',
       kind: 'download',
@@ -1062,7 +1354,7 @@ export class RunManager {
           ? `; a file named ${quote(check.filename, 120)} was already there, so a number was added`
           : `; it was saved under that name instead of ${quote(check.filename, 120)}`;
     return {
-      text: `save_file · saved ${quote(saved.name, 120)} (${check.bytes} bytes)${saveAs ? '' : ' in the Downloads folder'}${note}.`,
+      text: `save_file · saved ${quote(saved.name, 120)} (${check.bytes} bytes)${saveAs ? '' : ' in the Downloads folder'}${note}.${projectWarning}`,
       isError: false,
     };
   }
@@ -1185,6 +1477,8 @@ export class RunManager {
     });
     const next = pairOf(pair);
     const stored = await getLive(conversationId);
+    const config = configuredResume(next, await providersStorage.get(), await settingsStorage.get());
+    if (config) await updateConversation(conversationId, { resumeConfig: config, needsModelSelection: false });
     if (stored && JSON.stringify(pairOf(stored)) === JSON.stringify(next)) return;
     await setLive(conversationId, next);
     this.emit(conversationId, { type: 'live', pair: next });
@@ -1227,27 +1521,21 @@ export class RunManager {
     return true;
   }
 
-  async #setStatus(record: RunRecord, status: RunStatus, reason?: string): Promise<void> {
-    record.status = status;
-    record.reason = reason;
-    await putRun(record);
-    const conversation = await updateConversation(record.conversationId, { status });
+  async #setStatus(
+    record: RunRecord,
+    status: RunStatus,
+    reason?: string,
+    final: Partial<RunRecord> = {},
+  ): Promise<void> {
+    const stored = await getRun(record.conversationId);
+    const current = stored?.runId === record.runId ? stored : record;
+    const next = { ...current, ...final, status, reason };
+    await saveCheckpoint(next);
+    Object.assign(record, next);
+    const conversation = await getConversation(record.conversationId);
     this.emit(record.conversationId, { type: 'run_status', status, reason, startedAt: record.startedAt });
     await this.scope.status(record.conversationId, status, conversation?.title ?? '');
     void this.border.status(record.conversationId, status).catch(() => undefined);
-  }
-
-  /** Continue and Resume: a new run on the same context, opened by a note. */
-  async #continue(conversationId: string, from: RunStatus, note: string): Promise<void> {
-    if (this.#runs.has(conversationId)) return;
-    const previous = await getRun(conversationId);
-    if (previous?.status !== from) return;
-    await this.#start(conversationId, { note, restore: previous });
-  }
-
-  async #start(conversationId: string, options: { note?: string; restore?: RunRecord } = {}): Promise<void> {
-    if (options.note) await new RunWriter(conversationId, 'note').appNote(options.note);
-    this.#launch(conversationId, options.restore);
   }
 
   /**
@@ -1255,6 +1543,7 @@ export class RunManager {
    * awaits, so a choice made while the run starts applies to the next run.
    */
   #launch(conversationId: string, restore?: RunRecord, pair?: LivePair): void {
+    if (this.#runs.has(conversationId)) return;
     const starting = pair ? Promise.resolve(pair) : livePair(conversationId);
     starting.catch(() => undefined);
     const controller = new AbortController();
@@ -1281,11 +1570,19 @@ export class RunManager {
       noteActivity('run');
       // Counted here, before the model resolves, since every run that starts is counted when it ends.
       void count('runs.started');
-      await this.#setStatus(record, 'running');
       let end: LoopEnd | undefined;
       try {
+        if (conversation.projectId && (await getProject(conversation.projectId))?.archived)
+          throw new Error('Restore this project before running its sessions.');
+        await putRun(record);
+        await this.#setStatus(record, 'running');
         const model = await resolveModel(await starting);
         const settings = (await settingsStorage.get()) ?? DEFAULT_SETTINGS;
+        await updateConversation(conversationId, {
+          resumeConfig: resumeConfiguration({ model: model.ref, reasoning: model.reasoning }, model.profile, settings),
+          needsModelSelection: false,
+        });
+        const projectInstructions = await projectContext(conversation.projectId);
         record.model = await runModel(model.ref);
         if (record.model) {
           // Written now, so a run the restart cuts still counts its model's outcome.
@@ -1295,6 +1592,7 @@ export class RunManager {
         this.#modes.set(conversationId, conversation.mode);
         const session = await this.#openSession(conversationId);
         record.tabs = session.tabIds();
+        await this.#rememberTabs(conversationId);
         const tools = toolsForRun({ vision: model.profile.vision });
         const loop = new AgentLoop({
           conversationId,
@@ -1305,6 +1603,7 @@ export class RunManager {
             responseLanguage: settings.responseLanguage,
             tools: tools.map(t => t.name),
             customInstructions: settings.customInstructions,
+            projectInstructions,
           }),
           tools,
           mode: () => this.#modes.get(conversationId) ?? conversation.mode,
@@ -1313,9 +1612,12 @@ export class RunManager {
           signal: controller.signal,
           emit: event => this.emit(conversationId, event),
           turnCap: settings.turnCap,
+          guardLimits: { errorCap: settings.errorCap, noEffectCap: settings.noEffectCap },
+          siteNotes: settings.siteNotes,
           thumbnail,
           agentTool: (call, signal) => this.#agentTool(conversationId, call, signal),
           restore: restore ? { debt: restore.debt as DebtEntry[], guards: restore.guards } : undefined,
+          requireObservation: !!restore,
           takeSteering: () => {
             const queue = this.#queues.get(conversationId)?.splice(0) ?? [];
             if (queue.length) this.#emitQueue(conversationId);
@@ -1327,26 +1629,55 @@ export class RunManager {
         loopRef = loop;
         loop.hasSteering = () => (this.#queues.get(conversationId)?.length ?? 0) > 0;
         end = await loop.run();
-        record.turns += end.turns;
-        record.usage = addUsage(record.usage, end.usage);
+        record.turns = end.turns;
+        record.usage = end.usage;
         record.outcome = end.outcome;
         record.debt = loop.debt;
         record.guards = loop.guards.state;
         if (end.status === 'failed' && end.reason) await this.#notice(conversationId, end.reason, 'error');
+        if (end.status === 'stopped' && this.#pausing.has(conversationId)) {
+          end = {
+            ...end,
+            status: 'suspended',
+            reason: 'Paused and saved. Resume checks the current pages before continuing.',
+          };
+          await new RunWriter(conversationId, runId).appNote(end.reason!);
+        }
         if (end.status === 'stopped') {
           await this.#notice(conversationId, STOPPED_BY_USER, 'info');
           await new RunWriter(conversationId, runId).appNote(STOPPED_NOTE);
         }
-        await this.#setStatus(record, end.status, end.reason);
-        if (end.status !== 'stopped' && !(await this.#inView(conversationId))) {
+        await this.#setStatus(record, end.status, end.reason, {
+          turns: record.turns,
+          usage: record.usage,
+          outcome: record.outcome,
+          debt: record.debt,
+          guards: record.guards,
+          pendingPrompt: undefined,
+        });
+        if (end.status !== 'stopped' && end.status !== 'suspended' && !(await this.#inView(conversationId))) {
           await notifyFinished(conversationId, end.outcome === 'success', (await this.scope.tabsOf(conversationId))[0]);
         }
       } catch (error) {
-        const message = error instanceof ModelUnavailable ? error.message : `The run failed: ${String(error)}`;
-        await this.#notice(conversationId, message, 'error');
-        record.outcome = 'failed';
-        await this.#setStatus(record, 'failed', message);
+        if (controller.signal.aborted) {
+          const status = this.#pausing.has(conversationId) ? 'suspended' : 'stopped';
+          await this.#setStatus(record, status, undefined, { pendingPrompt: undefined });
+        } else {
+          const message = error instanceof ModelUnavailable ? error.message : `The run failed: ${String(error)}`;
+          await this.#notice(conversationId, message, 'error');
+          record.outcome = 'failed';
+          await this.#setStatus(record, 'failed', message, { outcome: 'failed' });
+        }
       } finally {
+        try {
+          await archiveRun(record);
+        } catch {
+          this.emit(conversationId, {
+            type: 'error',
+            message: 'The run history could not be saved. Check available browser storage.',
+          });
+        }
+        this.#pausing.delete(conversationId);
         runEnded(record, end ?? {});
         // A run that finished well counts towards the card that asks for a store rating.
         if (endOf(record.status, record.outcome) === 'success') {

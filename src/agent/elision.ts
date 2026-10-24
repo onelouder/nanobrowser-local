@@ -14,9 +14,9 @@ export function ratioFor(window: number): number {
   return 0.8;
 }
 
-/** Past this the request cannot be sent: the window less the output limit counted (at most a quarter). */
+/** Reserve the same output budget that the request sends to the provider. */
 export function hardLimit(profile: ModelProfile, window = profile.contextWindow): number {
-  return window - Math.min(requestOutputLimit(profile), Math.floor(window / 4));
+  return window - requestOutputLimit(profile, window);
 }
 
 /** `min(ratio × window, window − output limit)`, in tokens. */
