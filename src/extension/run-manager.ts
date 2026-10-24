@@ -75,6 +75,7 @@ import { endOf } from './analytics-payload';
 export interface PanelConnection {
   tabId: number | null;
   conversationId: string | null;
+  pinned?: boolean;
   sink: Sink;
   unsubscribe?: () => void;
 }
@@ -178,7 +179,12 @@ export class RunManager {
     // A tab that joined, by @ or by a drag, brings its open panel along: the panel shows the tab's conversation,
     // whichever it showed before.
     for (const connection of this.connections) {
-      if (connection.tabId !== null && added.includes(connection.tabId) && connection.conversationId !== conversationId)
+      if (
+        !connection.pinned &&
+        connection.tabId !== null &&
+        added.includes(connection.tabId) &&
+        connection.conversationId !== conversationId
+      )
         await this.#subscribe(connection, connection.tabId, conversationId);
     }
   }
@@ -242,18 +248,23 @@ export class RunManager {
     this.#pausing.delete(conversationId);
   }
 
-  async workspaceOpen(conversationId: string): Promise<number> {
+  async workspaceChanged(conversationId: string): Promise<void> {
+    await this.journal.ready(conversationId);
+    this.emit(conversationId, await this.snapshot(conversationId));
+  }
+
+  async workspaceOpen(conversationId: string, activate = true): Promise<number> {
     const conversation = await getConversation(conversationId);
     if (!conversation) throw new Error('Session not found.');
     const live = await this.scope.scopeTabs(conversationId);
     if (live.length) {
-      await chrome.tabs.update(live[0].tabId, { active: true });
+      if (activate) await chrome.tabs.update(live[0].tabId, { active: true });
       return live[0].tabId;
     }
     await this.permissions.ready();
     const saved = conversation.savedTabs?.[0];
     if (saved && !resumableUrl(saved.url, this.permissions.blockedSites())) throw new Error('This site is blocked.');
-    const tab = await chrome.tabs.create({ url: saved?.url ?? 'about:blank', active: true });
+    const tab = await chrome.tabs.create({ url: saved?.url ?? 'about:blank', active: activate });
     if (saved) this.#tabIdentities.set(tab.id!, saved.id);
     const bound = await this.scope.add(conversationId, tab.id!, saved?.origin ?? 'start');
     if (!bound.ok) throw new Error(`The session tab could not be opened: ${bound.reason}.`);
@@ -703,8 +714,21 @@ export class RunManager {
   }
 
   async handle(connection: PanelConnection, command: PanelCommand): Promise<void> {
+    if (
+      connection.pinned &&
+      command.type !== 'subscribe' &&
+      'conversationId' in command &&
+      command.conversationId !== connection.conversationId
+    ) {
+      this.journal.direct(connection.conversationId, connection.sink, {
+        type: 'error',
+        message: 'scope.workspaceChanged',
+      });
+      return;
+    }
     switch (command.type) {
       case 'subscribe':
+        connection.pinned = connection.pinned || command.pinned === true;
         return this.#subscribe(connection, command.tabId, command.conversationId, command.sinceSeq);
       case 'send':
         return this.#send(connection, command);
@@ -805,7 +829,7 @@ export class RunManager {
         const own = await this.scope.tabsOf(command.conversationId);
         if (own.length && !own.includes(command.tabId)) {
           for (const other of [...this.connections]) {
-            if (other.tabId === own[0] && other.conversationId !== command.conversationId)
+            if (!other.pinned && other.tabId === own[0] && other.conversationId !== command.conversationId)
               await this.#subscribe(other, own[0], command.conversationId);
           }
           return;
@@ -838,6 +862,15 @@ export class RunManager {
    */
   async #takeUp(connection: PanelConnection, conversationId: string): Promise<boolean> {
     const tabId = connection.tabId;
+    if (connection.pinned) {
+      const owner = tabId === null ? null : await this.scope.conversationOf(tabId);
+      if (connection.conversationId === conversationId && owner === conversationId) return true;
+      this.journal.direct(connection.conversationId, connection.sink, {
+        type: 'error',
+        message: 'scope.workspaceChanged',
+      });
+      return false;
+    }
     if (tabId === null || connection.conversationId !== conversationId) return true;
     const owner = await this.scope.conversationOf(tabId);
     if (owner === conversationId) return true;
@@ -864,8 +897,10 @@ export class RunManager {
     sinceSeq?: number,
   ): Promise<void> {
     connection.tabId = tabId;
-    const conversationId =
-      requested !== undefined && requested !== null ? requested : await this.scope.conversationOf(tabId);
+    let conversationId = requested ?? null;
+    if (conversationId === null) {
+      conversationId = connection.pinned ? connection.conversationId : await this.scope.conversationOf(tabId);
+    }
     connection.unsubscribe?.();
     connection.unsubscribe = undefined;
     connection.conversationId = conversationId;

@@ -10,7 +10,10 @@ export class PanelClient {
   #subscription: { tabId: number; conversationId: string | null } | null = null;
   #closed = false;
 
-  constructor(readonly tabId: number) {}
+  constructor(
+    readonly tabId: number,
+    readonly pinned = false,
+  ) {}
 
   #connect(): chrome.runtime.Port {
     if (this.#port) return this.#port;
@@ -32,6 +35,7 @@ export class PanelClient {
         const sub = this.#subscription;
         this.send({
           type: 'subscribe',
+          pinned: this.pinned,
           tabId: this.tabId,
           conversationId: sub?.conversationId ?? null,
           sinceSeq: sub?.conversationId ? this.#lastSeq : undefined,
@@ -53,7 +57,7 @@ export class PanelClient {
 
   subscribe(conversationId: string | null = null): void {
     this.#subscription = { tabId: this.tabId, conversationId };
-    this.send({ type: 'subscribe', tabId: this.tabId, conversationId });
+    this.send({ type: 'subscribe', tabId: this.tabId, conversationId, pinned: this.pinned });
   }
 
   onEvent(listener: (event: PanelEvent) => void): () => void {

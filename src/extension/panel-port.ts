@@ -1,4 +1,4 @@
-// The worker's end of the panel protocol. Only the extension's own panel page may connect: there is no external
+// The worker's end of the panel protocol. Only the extension's own panel and workspace may connect: no external
 // listener, and a port from anything else is closed at once.
 import { PANEL_PORT_NAME } from '@src/ui/protocol';
 import type { PanelCommand, PanelEvent } from '@src/ui/protocol';
@@ -7,9 +7,11 @@ import { observeCommand } from './analytics';
 
 export function listenForPanels(manager: RunManager): void {
   const panelUrl = chrome.runtime.getURL('/sidepanel.html');
+  const workspaceUrl = chrome.runtime.getURL('/workspace.html');
   chrome.runtime.onConnect.addListener(port => {
     if (port.name !== PANEL_PORT_NAME) return;
-    if (port.sender?.id !== chrome.runtime.id || !port.sender?.url?.startsWith(panelUrl)) {
+    const senderUrl = port.sender?.url?.split(/[?#]/, 1)[0];
+    if (port.sender?.id !== chrome.runtime.id || (senderUrl !== panelUrl && senderUrl !== workspaceUrl)) {
       port.disconnect();
       return;
     }
@@ -17,6 +19,7 @@ export function listenForPanels(manager: RunManager): void {
     const connection: PanelConnection = {
       tabId: null,
       conversationId: null,
+      pinned: senderUrl === workspaceUrl,
       sink: (event: PanelEvent) => {
         if (open) port.postMessage(event);
       },

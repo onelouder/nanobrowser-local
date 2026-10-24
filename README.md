@@ -84,9 +84,11 @@ Click **Projects** in the side panel to open the full-page workspace.
 
 1. Create a project with an objective, target sites, and instructions. Project objectives and instructions are included in its sessions; notes remain in the workspace unless you share them.
 2. Create a session with a starting task, or move an existing chat from **Unassigned sessions** into the project. Creating a session does not start the agent; the first target site becomes its saved starting page.
-3. Use **Open session tab**, then the toolbar icon to open chat, or **Review and resume** to inspect the model and pages before starting.
+3. Use **Open chat** to read and continue that session directly in the workspace. The **Chat** tab and browser side panel show the same conversation; **Open website and side-panel chat** switches to its website. Use **Review and resume** to inspect a saved run before continuing it.
 4. Use **Save recent evidence** to retain up to the latest 20 successful page captures from the active conversation branch. Evidence records its source URL and capture time when available.
-5. Search, preview, download, or attach selected files from **Evidence** and **Files**. Storing a file does not automatically send it to the model.
+5. Search, preview, or download files from **Evidence** and **Files**. Select files, choose the session, and click **Add selected to session** to return to that chat with the files attached. They remain available when you send the next prompt; storing a file alone does not send it to the model.
+
+When you open **Projects** from an existing chat, its conversation is selected. To organize an unassigned chat, select or create a project and click **Move this conversation into this project**; the open side panel updates immediately. If a session’s website tab closes or moves to another conversation, use **Reconnect website** in the project chat before sending another message.
 
 For website investigation, separate sessions by task—for example navigation mapping, form behavior, responsive layout, and content structure—while keeping their evidence in one project. Shortcuts can hold recurring investigation prompts.
 
@@ -146,7 +148,7 @@ Native browser checks use the extension's own `chrome.debugger` integration, wit
 
 ```sh
 corepack pnpm install-chrome
-corepack pnpm autorun workspace,restart-restore,panel-attach,inference-controls,permission-warnings --timeout 180
+corepack pnpm autorun workspace-chat,workspace,restart-restore,panel-attach,inference-controls,permission-warnings --timeout 180
 ```
 
 If Chrome for Testing is unavailable for your architecture, set `CHROME_PATH` to a compatible installed Chrome/Chromium executable before running `autorun`. Example environment syntax:

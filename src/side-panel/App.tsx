@@ -69,7 +69,17 @@ function downloadText(filename: string, text: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function App() {
+export function App({
+  session,
+  onNewSession,
+  onResume,
+  onReconnect,
+}: {
+  session?: { tabId: number; conversationId: string };
+  onNewSession?: () => void;
+  onResume?: () => void;
+  onReconnect?: () => void;
+} = {}) {
   useLanguage();
   const settings = useStorage(settingsStorage, DEFAULT_SETTINGS);
   const providers = useStorage(providersStorage, NO_PROVIDERS);
@@ -179,21 +189,27 @@ export function App() {
 
   useEffect(() => {
     let created: PanelClient | null = null;
-    panelTabId()
+    let disposed = false;
+    const target = session ? Promise.resolve(session.tabId) : panelTabId();
+    target
       .then(tabId => {
-        installTestHook(tabId);
-        created = new PanelClient(tabId);
+        if (disposed) return;
+        if (!session) installTestHook(tabId);
+        created = new PanelClient(tabId, !!session);
         created.onEvent(event => {
           // An export arrives as Markdown for this panel, and is saved as a file.
           if (event.type === 'export') downloadText(event.filename, event.markdown);
           dispatch(event);
         });
-        created.subscribe();
+        created.subscribe(session?.conversationId);
         setClient(created);
       })
       .catch(error => setFailure(String(error)));
-    return () => created?.close();
-  }, []);
+    return () => {
+      disposed = true;
+      created?.close();
+    };
+  }, [session]);
 
   const models: ModelChoice[] = useMemo(
     () =>
@@ -234,6 +250,7 @@ export function App() {
     void settingsStorage.set(s => ({ ...s, defaultModel: next.model, reasoning: next.reasoning }));
   };
   const active = isActive(state.status);
+  const disconnected = !!session && state.loaded && !state.tabs.some(tab => tab.tabId === session.tabId);
   const ratingCard = useRatingCard(state.conversationId, state.startedAt, active, !!whatsNew);
   /** Sends a command the user gave that starts a run; with the rating card showing, it is their Maybe later. */
   const startRun = (command: PanelCommand) => {
@@ -284,6 +301,7 @@ export function App() {
   }, [state.status, state.conversationId, client]);
 
   const newChat = (confirmed = false) => {
+    if (session) return onNewSession?.();
     if (isActive(state.status) && !confirmed) {
       setConfirmNewChat(true);
       return;
@@ -303,7 +321,7 @@ export function App() {
     text: string,
     extra: { mode?: PermissionMode; model?: ModelRef; startUrl?: string; shortcut?: true } = {},
   ): void => {
-    if (!client || pendingAttachments > 0) return;
+    if (!client || pendingAttachments > 0 || disconnected) return;
     // `/compact` compacts the conversation now, or at the next turn boundary of a run.
     if (text.trim() === '/compact') {
       if (state.conversationId) client.send({ type: 'compact', conversationId: state.conversationId });
@@ -373,7 +391,7 @@ export function App() {
   const empty = !state.entries.length && !state.streaming;
 
   return (
-    <div className={`flex h-full flex-col${empty && state.loaded ? ' nb-start' : ''}`}>
+    <div className={`flex h-full min-h-0 flex-col${empty && state.loaded ? ' nb-start' : ''}`}>
       {/* The header has no field of its own, so it is part of the panel; a line under it only above a conversation. */}
       <header
         className={`flex items-center gap-1 border-b px-2 py-1.5 ${empty && state.loaded ? 'border-transparent' : 'border-nb-border/60'}`}>
@@ -387,32 +405,38 @@ export function App() {
           className="ml-1 flex shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-nb-accent">
           <LogoMark size={20} />
         </a>
-        {/* The title is for screen readers only; the header shows the mark and three buttons. */}
-        <h1 className="sr-only">{conversation?.title || t('panel.newChat')}</h1>
+        {/* The workspace also shows the conversation title; the narrow side panel keeps its compact header. */}
+        <h1 className={session ? 'min-w-0 truncate px-2 text-sm font-medium' : 'sr-only'}>
+          {conversation?.title || t('panel.newChat')}
+        </h1>
         <span className="flex-1" />
-        <button
-          type="button"
-          className="rounded-lg px-2 py-1 text-xs text-nb-muted hover:bg-nb-surface"
-          aria-label={t('workspace.title')}
-          onClick={() => openWorkspace(state.conversationId)}>
-          {t('workspace.projects')}
-        </button>
-        <IconButton label={t('panel.newChat')} onClick={() => newChat(confirmNewChat)}>
-          <NewChatIcon />
-        </IconButton>
-        {/* Recent tasks opens once the conversation in this tab stops; other tabs' panels are free. */}
-        <IconButton
-          label={t('history.title')}
-          title={active ? t('history.busy') : undefined}
-          disabled={active}
-          onClick={() => setHistoryOpen(true)}>
-          <HistoryIcon />
-        </IconButton>
+        {!session ? (
+          <>
+            <button
+              type="button"
+              className="rounded-lg px-2 py-1 text-xs text-nb-muted hover:bg-nb-surface"
+              aria-label={t('workspace.title')}
+              onClick={() => openWorkspace(state.conversationId)}>
+              {t('workspace.projects')}
+            </button>
+            <IconButton label={t('panel.newChat')} onClick={() => newChat(confirmNewChat)}>
+              <NewChatIcon />
+            </IconButton>
+            {/* Recent tasks opens once the conversation in this tab stops; other tabs' panels are free. */}
+            <IconButton
+              label={t('history.title')}
+              title={active ? t('history.busy') : undefined}
+              disabled={active}
+              onClick={() => setHistoryOpen(true)}>
+              <HistoryIcon />
+            </IconButton>
+          </>
+        ) : null}
         <IconButton label={t('panel.settings')} onClick={() => void chrome.runtime.openOptionsPage()}>
           <SettingsIcon />
         </IconButton>
       </header>
-      {conversation?.projectId ? (
+      {!session && conversation?.projectId ? (
         <ProjectBadge projectId={conversation.projectId} conversationId={conversation.id} />
       ) : null}
       {confirmNewChat ? (
@@ -510,7 +534,7 @@ export function App() {
       <RunBar
         status={state.status}
         onContinue={() => state.conversationId && startRun({ type: 'continue', conversationId: state.conversationId })}
-        onResume={() => state.conversationId && openWorkspace(state.conversationId, true)}
+        onResume={() => (onResume ? onResume() : state.conversationId && openWorkspace(state.conversationId, true))}
         onPause={() => state.conversationId && client?.send({ type: 'pause', conversationId: state.conversationId })}
       />
       <QueueList
@@ -533,6 +557,7 @@ export function App() {
       />
       <Composer
         active={active}
+        sendDisabled={disconnected}
         mode={mode}
         model={model}
         models={models}
@@ -541,6 +566,13 @@ export function App() {
         notice={
           <>
             {/* The What's new card comes first; the notices below still show under it. The rating card waits for it (useRatingCard). */}
+            {disconnected && onReconnect ? (
+              <NoticeCard
+                title={t('workspace.disconnected')}
+                action={{ label: t('workspace.reconnect'), run: onReconnect }}>
+                {t('workspace.reconnectHint')}
+              </NoticeCard>
+            ) : null}
             {whatsNew ? <WhatsNewCard release={whatsNew} /> : null}
             {ratingCard ? <RatingCard /> : null}
             {pendingAttachments > 0 ? (

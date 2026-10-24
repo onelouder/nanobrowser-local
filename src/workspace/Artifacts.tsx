@@ -40,6 +40,8 @@ export function Artifacts({
   sessions,
   busy,
   run,
+  selectedSessionId,
+  onAttached,
 }: {
   projectId: string;
   kind: 'file' | 'evidence';
@@ -47,11 +49,13 @@ export function Artifacts({
   sessions: Conversation[];
   busy: boolean;
   run: RunAction;
+  selectedSessionId: string | null;
+  onAttached: (id: string) => void;
 }) {
   const [query, setQuery] = useState('');
   const [warnings, setWarnings] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
-  const [session, setSession] = useState('');
+  const [session, setSession] = useState(selectedSessionId ?? '');
   const [preview, setPreview] = useState<Preview | null>(null);
   const input = useRef<HTMLInputElement>(null);
   useEffect(
@@ -173,6 +177,7 @@ export function Artifacts({
               void run(async () => {
                 await requestWorkspace({ op: 'attach-artifacts', conversationId: session, artifactIds: selected });
                 setSelected([]);
+                onAttached(session);
               })
             }>
             {t('workspace.attach')}

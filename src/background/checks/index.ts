@@ -36,6 +36,7 @@ import './panel-move-tab';
 import './model-config';
 import './inference-controls';
 import './workspace';
+import './workspace-chat';
 import './model-picker';
 import './llm-live';
 import './canary-sweep';

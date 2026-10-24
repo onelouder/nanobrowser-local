@@ -1,5 +1,5 @@
 // Attachments: images and text files the user attached, stored as blobs with the conversation. At the start of a run
-// the newest user message's files are added: a text file inside the boundary with the label `source=attachment «name»`,
+// pending user messages' files are added: a text file inside the boundary with the label `source=attachment «name»`,
 // up to a budget scaled to the window; an image after its fixed line. `read_attachment` pages through the rest.
 import { quote, siteOf } from '@src/browser-control';
 import { getBlobForConversation } from '@src/store/conversations';

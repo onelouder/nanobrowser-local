@@ -579,5 +579,17 @@
   "workspace.previewTruncated": "預覽顯示前 100,000 個字元。下載檔案可查看完整內容。",
   "workspace.pdfStored": "原始檔案已儲存，無法擷取文字。",
   "workspace.pdfTruncated": "PDF 文字僅部分擷取；下載原件可查看其餘頁面。",
-  "workspace.contextHint": "目標和指令會套用於工作階段。筆記保留在工作區，除非你主動分享。"
+  "workspace.contextHint": "目標和指令會套用於工作階段。筆記保留在工作區，除非你主動分享。",
+  "workspace.chat": "聊天",
+  "workspace.openChat": "開啟聊天",
+  "workspace.showWebsite": "開啟網站和側邊欄聊天",
+  "workspace.chatHint": "在專案工作區開啟此對話，不會啟動任務。",
+  "workspace.currentChat": "目前對話",
+  "workspace.linkChat": "將此對話移入此專案",
+  "workspace.chatLinked": "對話已連結到此專案。",
+  "workspace.filesAttached": "檔案已新增至此對話。在下方傳送訊息以繼續。",
+  "workspace.disconnected": "網站分頁已中斷連線",
+  "workspace.reconnect": "重新連線網站",
+  "workspace.reconnectHint": "對話保持不變。請重新連線網站後再傳送訊息。",
+  "scope.workspaceChanged": "此對話的網站分頁已變更。請在專案聊天中重新連線網站後再傳送訊息。"
 }

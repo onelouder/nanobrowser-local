@@ -26,7 +26,7 @@ export type ContextRef =
 
 export type PanelCommand =
   /** The panel of `tabId` shows the conversation the tab belongs to, or an empty one. */
-  | { type: 'subscribe'; tabId: number; conversationId?: string | null; sinceSeq?: number }
+  | { type: 'subscribe'; tabId: number; conversationId?: string | null; sinceSeq?: number; pinned?: boolean }
   | {
       type: 'send';
       tabId: number;

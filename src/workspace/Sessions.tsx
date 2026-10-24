@@ -6,7 +6,17 @@ import { requestWorkspace } from '@src/ui/workspace-protocol';
 
 export type RunAction = (operation: () => Promise<void>) => Promise<void>;
 
-export function NewSession({ projectId, busy, run }: { projectId: string; busy: boolean; run: RunAction }) {
+export function NewSession({
+  projectId,
+  busy,
+  run,
+  onCreated,
+}: {
+  projectId: string;
+  busy: boolean;
+  run: RunAction;
+  onCreated: (id: string) => void;
+}) {
   const [title, setTitle] = useState('');
   const [objective, setObjective] = useState('');
   return (
@@ -17,7 +27,8 @@ export function NewSession({ projectId, busy, run }: { projectId: string; busy: 
         onSubmit={e => {
           e.preventDefault();
           void run(async () => {
-            await requestWorkspace({ op: 'create-session', projectId, title, objective });
+            const session = await requestWorkspace<Conversation>({ op: 'create-session', projectId, title, objective });
+            onCreated(session.id);
             setTitle('');
             setObjective('');
           });
@@ -57,6 +68,7 @@ export function Sessions({
   busy,
   run,
   onResume,
+  onOpen,
 }: {
   sessions: Conversation[];
   projects: Project[];
@@ -65,6 +77,7 @@ export function Sessions({
   busy: boolean;
   run: RunAction;
   onResume: (conversationId: string) => void;
+  onOpen: (conversationId: string) => void;
 }) {
   if (!sessions.length) return <p className="text-sm text-nb-muted">{t('workspace.noSessions')}</p>;
   return (
@@ -79,6 +92,7 @@ export function Sessions({
           busy={busy}
           run={run}
           onResume={() => onResume(session.id)}
+          onOpen={() => onOpen(session.id)}
         />
       ))}
     </ul>
@@ -93,6 +107,7 @@ function SessionRow({
   busy,
   run,
   onResume,
+  onOpen,
 }: {
   session: Conversation;
   projects: Project[];
@@ -101,6 +116,7 @@ function SessionRow({
   busy: boolean;
   run: RunAction;
   onResume: () => void;
+  onOpen: () => void;
 }) {
   const active = session.status === 'running' || session.status === 'awaiting_user';
   const [collected, setCollected] = useState<number | null>(null);
@@ -139,14 +155,8 @@ function SessionRow({
           : t('workspace.noCheckpoint')}
       </p>
       <div className="flex flex-wrap gap-2">
-        <Button
-          disabled={busy}
-          onClick={() =>
-            void run(async () => {
-              await requestWorkspace({ op: 'open-session', conversationId: session.id });
-            })
-          }>
-          {t('workspace.open')}
+        <Button disabled={busy} onClick={onOpen}>
+          {t('workspace.openChat')}
         </Button>
         {active ? (
           <Button
@@ -187,7 +197,7 @@ function SessionRow({
           {t('workspace.evidenceSaved', { count: collected })}
         </p>
       ) : null}
-      <p className="mt-2 text-xs text-nb-muted">{t('workspace.openHint')}</p>
+      <p className="mt-2 text-xs text-nb-muted">{t('workspace.chatHint')}</p>
       {runs.length ? (
         <details className="mt-3 text-sm">
           <summary className="cursor-pointer text-nb-muted">

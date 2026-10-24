@@ -116,14 +116,20 @@ describe('read_attachment', () => {
   });
 });
 
-describe('the loop adds the newest message’s files once', () => {
-  it('inlines them before the first request and marks them', async () => {
+describe('the loop adds pending user files once', () => {
+  it.each([false, true])('inlines files before the first request, with a later prompt: %s', async laterPrompt => {
     const c = await createConversation({ mode: 'ask' });
     const f = await file(c.id, 'notes.md', 'text/markdown', 'Kettle: 49.90');
     await appendEntry(c.id, {
       type: 'message',
       message: { role: 'user', parts: [{ type: 'text', text: 'What does the kettle cost?' }, f] },
     });
+    if (laterPrompt) {
+      await appendEntry(c.id, {
+        type: 'message',
+        message: { role: 'user', parts: [{ type: 'text', text: 'Continue from the attached project notes.' }] },
+      });
+    }
     const scripted = new ScriptedModel([{ text: '49.90' }]);
     const loop = new AgentLoop({
       conversationId: c.id,

@@ -73,7 +73,7 @@ const commandSchema = z.discriminatedUnion('op', [
     title: z.string().trim().min(1).max(120),
     objective: z.string().trim().min(1).max(20_000),
   }),
-  z.object({ op: z.literal('open-session'), conversationId: id }),
+  z.object({ op: z.literal('open-session'), conversationId: id, activate: z.boolean().optional() }),
   z.object({ op: z.literal('resume-preview'), conversationId: id }),
   z.object({ op: z.literal('pause'), conversationId: id }),
   z.object({ op: z.literal('collect-evidence'), conversationId: id }),
@@ -181,6 +181,7 @@ async function attachArtifacts(manager: RunManager, conversationId: string, ids:
     conversationId,
     artifacts.map(a => a.id),
   );
+  await manager.workspaceChanged(conversationId);
 }
 
 export async function handleWorkspace(manager: RunManager, raw: unknown): Promise<unknown> {
@@ -202,11 +203,12 @@ export async function handleWorkspace(manager: RunManager, raw: unknown): Promis
     }
     case 'assign':
       assertIdle(manager, command.conversationId);
-      return assignProject(command.conversationId, command.projectId);
+      await assignProject(command.conversationId, command.projectId);
+      return manager.workspaceChanged(command.conversationId);
     case 'create-session':
       return createSession(command);
     case 'open-session':
-      return manager.workspaceOpen(command.conversationId);
+      return manager.workspaceOpen(command.conversationId, command.activate);
     case 'pause':
       return manager.workspacePause(command.conversationId);
     case 'collect-evidence':
