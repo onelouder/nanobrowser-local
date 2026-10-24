@@ -3,7 +3,6 @@ import { lstat, realpath, readdir, mkdir, open, link, rename, unlink } from 'nod
 import { randomUUID } from 'node:crypto';
 import { endianness } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { folderRoots } from './folders.mjs';
 
 export const HOST_NAME = 'com.nanobrowser.local_files';
@@ -197,7 +196,7 @@ export async function serve(input, output, roots) {
   if (buffer.length) throw new Error('Incomplete native message.');
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (import.meta.main) {
   serve(process.stdin, process.stdout, await folderRoots()).catch(error => {
     process.stderr.write(`Nanobrowser file helper: ${error.message}\n`);
     process.exitCode = 1;

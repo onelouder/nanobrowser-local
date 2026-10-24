@@ -248,3 +248,27 @@ test('Windows folder values reject invalid roots and do not expand access to the
   assert.deepEqual(parseWindowsFolders('null', home), {});
   assert.throws(() => parseWindowsFolders('not JSON', home));
 });
+
+test('host and installer execute when launched through a directory alias', async t => {
+  const alias = path.join(directory, 'native-helper-alias');
+  try {
+    await symlink(fileURLToPath(new URL('.', import.meta.url)), alias, 'junction');
+  } catch (error) {
+    if (error.code === 'EPERM') return t.skip('directory links unavailable');
+    throw error;
+  }
+  const env = { ...process.env, HOME: directory, XDG_CONFIG_HOME: path.join(directory, 'alias-config') };
+  const reply = spawnSync(process.execPath, [path.join(alias, 'host.mjs')], {
+    env,
+    input: encodeMessage({ op: 'status' }),
+  });
+  assert.equal(reply.status, 0, reply.stderr.toString());
+  assert.ok(reply.stdout.length > 4, 'host must emit a framed response through an aliased entrypoint');
+  assert.equal(JSON.parse(reply.stdout.subarray(4).toString()).ok, true);
+  const setup = spawnSync(process.execPath, [path.join(alias, 'install.mjs'), '--extension-id', 'invalid'], {
+    env,
+    encoding: 'utf8',
+  });
+  assert.equal(setup.status, 1, 'installer must execute and reject the invalid ID before writing files');
+  assert.match(setup.stderr, /Extension ID must contain 32 letters/);
+});

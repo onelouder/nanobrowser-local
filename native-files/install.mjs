@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { folderRoots } from './folders.mjs';
 
@@ -105,7 +105,7 @@ export async function install(extensionId) {
   return { directory, roots: await folderRoots() };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (import.meta.main) {
   const flag = process.argv.indexOf('--extension-id');
   const id = flag < 0 ? '' : process.argv[flag + 1];
   install(id)
