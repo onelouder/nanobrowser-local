@@ -156,9 +156,14 @@ export type Entry = EntryBody & {
 
 export type EntryOf<T extends EntryBody['type']> = Extract<Entry, { type: T }>;
 
-export type RunStatus = 'idle' | 'running' | 'awaiting_user' | 'interrupted' | 'done' | 'failed' | 'stopped' | 'capped';
+export type RunStatus =
+  'idle' | 'running' | 'awaiting_user' | 'interrupted' | 'done' | 'failed' | 'stopped' | 'capped' | 'suspended';
 
 export interface Conversation {
+  projectId?: string;
+  needsModelSelection?: boolean;
+  resumeConfig?: ResumeConfig;
+  savedTabs?: SavedTab[];
   id: string;
   title: string;
   /** The user renamed it; the title no longer follows the first message. */
@@ -250,6 +255,8 @@ export interface StoredBlob {
   mimeType: string;
   size: number;
   data: Blob;
+  pdf?: { text: string; pages: number; totalPages: number; truncated: boolean };
+  sourceIds?: string[];
   createdAt: string;
 }
 
@@ -260,3 +267,69 @@ export interface StoredShortcut {
   pinned: boolean;
   updatedAt: string;
 }
+
+export interface Project {
+  id: string;
+  name: string;
+  objective: string;
+  targetSites: string[];
+  instructions: string;
+  notes: string;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedTab {
+  id: string;
+  url: string;
+  title: string;
+  origin: 'start' | 'user' | 'agent';
+  active?: boolean;
+}
+
+export interface ResumeConfig {
+  model: ModelRef;
+  reasoning: ReasoningEffort;
+  turnCap: number;
+  errorCap: number;
+  noEffectCap: number;
+  contextWindow: number;
+  maxOutput: number;
+  outputLimit?: number;
+}
+
+export interface SessionCheckpoint {
+  conversationId: string;
+  runId: string;
+  leafEntryId: string | null;
+  status: RunStatus;
+  reason?: string;
+  tabs: SavedTab[];
+  config?: ResumeConfig;
+  debt: DebtItem[];
+  guards: GuardState;
+  turns: number;
+  usage: Usage;
+  updatedAt: string;
+}
+
+export interface ProjectArtifact {
+  id: string;
+  projectId: string;
+  conversationId?: string;
+  runId?: string;
+  entryId?: string;
+  kind: 'evidence' | 'file';
+  name: string;
+  mimeType: string;
+  size: number;
+  data: Blob;
+  sourceUrl?: string;
+  createdAt: string;
+  sha256: string;
+  capturedAt?: string;
+  pdf?: StoredBlob['pdf'];
+}
+
+export type Checkpoint = SessionCheckpoint;

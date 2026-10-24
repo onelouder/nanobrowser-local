@@ -1,178 +1,177 @@
-<h1 align="center">
-    <img src="https://github.com/user-attachments/assets/294f9cdc-38ba-4cdc-beff-82fe78c9a023" width="100%" alt="Nanobrowser" /><br>
-</h1>
+# Nanobrowser Local
 
-<div align="center">
+A local-first fork of [Nanobrowser](https://github.com/nanobrowser/nanobrowser) for browser automation, website investigation, and cleanroom rebuild workflows. Work in the browser side panel, organize investigations in projects, retain evidence, and resume saved sessions.
 
-[![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/nanobrowser)
-[![Twitter](https://img.shields.io/badge/Twitter-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/nanobrowser_ai)
-[![Discord](https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/NN3ABHggMK)
-[![DeepWiki][deepwiki-badge]](https://deepwiki.com/nanobrowser/nanobrowser)
-[![Sponsor](https://img.shields.io/badge/Sponsor-ff69b4?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/alexchenzl)
+This repository is **[onelouder/nanobrowser-local](https://github.com/onelouder/nanobrowser-local)**. The upstream Chrome Web Store listing installs upstream Nanobrowser, not this fork. Build and load this fork using the instructions below.
 
-</div>
+## What this fork adds
 
-<!-- The DeepWiki mark is inlined in the badge: deepwiki.com refuses requests that do not come from a browser. -->
+- **Editable inference limits:** context and output budgets per model, with a 150,000-token context default for the built-in ether-10 agent, max, and code profiles. Other profiles retain their own limits.
+- **Configurable concurrency:** four concurrent model requests per provider by default. The built-in ether-10 LAN and Tailscale connections share a queue because they reach the same backend.
+- **Run controls:** configurable turn, consecutive-error, and no-progress limits; pause and save; explicit resume review.
+- **Project workspace:** objectives, target sites, instructions, notes, existing/new sessions, files, evidence, checkpoints, and run history.
+- **Portable projects:** export/import project bundles with conversation history and retained files. Imported sessions require local model selection before running.
+- **PDF text extraction:** bundled PDF.js extracts text locally before the selected model receives it. CSS and common source/configuration files can also be attached as text.
+- **Reusable guidance:** custom instructions, site notes, and shortcuts with editable keyboard bindings.
+- **Local inference presets:** ether-10 and ether-9 OpenAI-compatible connections, alongside Ollama, LM Studio, and cloud providers.
+- **Telemetry disabled:** this fork disables analytics and the uninstall survey; see [PRIVACY.md](PRIVACY.md).
 
-[deepwiki-badge]: https://img.shields.io/badge/DeepWiki-1E293B?style=for-the-badge&logo=data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAC8AAAAvCAMAAABE%2BWOeAAAAY1BMVEX%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2BDm4mgAAAAIXRSTlMA%2FwAAL%2BkAAGbYIwAA0xpL8fgUwceTXOO2qqCKggVxOgugMgR1AAABkElEQVR42uWW2ZasIAxF5ahgyeiEs9b%2Ff2XrtRzK6xKfu%2FOIGyTJSYLn7UY5wL3H5sNmlYZ4Rguo2hBiGgHqpinSdqJnC7veuYNjkGSzPAK7xVmQJeRgSaX8u6vHJTmZTO8CE4Rn%2FhXTX8OLB3w4sjWREOdsXPCkwJIZrnNSB9%2BiuuITDS4Y4npOZNlSOPhJeKMKivVDqdmudJpW5Mq%2BNJLpXYW%2B6hLisrDo6S7%2BtDHbTbKiLq92WHwVV76sTiUGvNsLPjo67cGLJu9elnE6%2F7Bx8VNq3kXHP2v%2B%2Fxo%2F8%2FOpWwyon7l5j%2B2ZR%2BXkGfSItRBT6eAFgipJ6njRCgaHv1CFWdpJOsUT2tzygN3i8Rq0rcxd%2FAXT0qkHksUfVdO%2BMG75DD270zORg43kKkNTqIM8r%2Fhu9hqRXPrdeKywK776dxyFmtpwaSl31KPRWLPSW%2BBBPxG7DOnf6p8X82g4FV9p2f10VI05dpoUrunLx3zTYfBkZvOPVqR2DNO9ZtI2Md0bjx8QFL3%2F5DFwcMN58R%2BkZhV56KabXwAAAABJRU5ErkJggg%3D%3D
+The extension retains the upstream agent's browser tools, permission modes, vision support, voice input, and English, Simplified Chinese, and Traditional Chinese interfaces.
 
-## 🌐 Nanobrowser
+## Install on macOS, Windows, or Linux
 
-Nanobrowser is an open-source AI agent that works in your own browser. Tell it a task in the side panel; it reads the pages, clicks, types and moves between tabs to get it done, and it asks you before it submits, sends, deletes or uploads anything.
+Chrome and Edge are supported. Firefox and Safari are not supported; other Chromium browsers are not tested. The extension uses browser APIs and does not need a native companion service.
 
-⬇️ Get [Nanobrowser from the Chrome Web Store](https://chromewebstore.google.com/detail/nanobrowser/imbddededgmcgfhfpcjmijokokekbkal) for free
+### Build from source
 
-👏 Join the community on [Discord](https://discord.gg/NN3ABHggMK) | [X](https://x.com/nanobrowser_ai)
+Install **Node.js 24 LTS** (24.11 or later) and **pnpm 10.34.7**, pinned in `package.json`. Use the Node build matching your machine's architecture, including ARM64 on Apple Silicon and DGX Spark.
 
-❤️ Support the project by [sponsoring us](https://github.com/sponsors/alexchenzl). Every contribution helps keep Nanobrowser free and open source.
-
-## 🔥 Why Nanobrowser?
-
-- **Free.** No subscription and no hidden costs. Use your own API key or a local model, and pay only for what you use.
-- **Private.** Everything runs in your browser. Your keys stay in the browser and go only to their own provider. Pages go only to the model you choose. A daily count of users and usage counts are sent without an ID and never include your pages or sites; see [PRIVACY.md](PRIVACY.md).
-- **Flexible LLM.** Choose from many cloud providers, or run a model on your own computer, and switch whenever you like. No lock-in.
-- **Open source.** All the code is public, so you can see exactly how it works and change it to fit your needs.
-
-## 📊 Key Features
-
-- **Chat in the side panel**: say what you need in plain words. The agent reads pages, clicks, types and moves between tabs to get it done.
-- **Several tasks at once**: each task works in its own tab group, so you can run a few side by side and keep browsing.
-- **You choose when it asks**: pick Ask or Auto mode, and set rules for each site (see below).
-- **Your choice of model**: cloud or local. Pick the model, and how hard it thinks, for each chat.
-- **Images and files**: attach images, text files or a screenshot of the current tab. The agent can also upload your files to a page.
-- **Save results**: the agent can save its work, like a CSV table or a Markdown report, to your Downloads folder. Chrome asks you the first time.
-- **Shortcuts**: save a prompt you use often and start it by typing `/`. You can give it a start page and a model.
-- **Voice input**: speak instead of typing, with OpenAI's or Gemini's voice model.
-- **Memory**: tell the agent what to keep in mind in every chat, like who you are or how you like your answers.
-- **Long tasks**: when a chat gets long, older steps are summed up automatically so the task can go on. Your own messages are always kept in full.
-- **Chat history**: go back to any chat, edit a message and run it again from there, or export the chat as Markdown.
-- **Your language and theme**: English, Simplified Chinese or Traditional Chinese, in light or dark.
-
-## 🌐 Browser Support
-
-- **Supported:** Chrome and Edge.
-- **Not supported:** Firefox, Safari, and other Chromium-based browsers (Opera, Arc, Brave and others). Nanobrowser may work in them, but they are not tested.
-
-## 🛡️ You decide what the agent may do
-
-| What the agent does | Ask mode (default) | Auto mode |
-| --- | --- | --- |
-| Read pages, click links, scroll, move between tabs | Goes ahead | Goes ahead |
-| Submit, send, delete or upload | Asks you first | Goes ahead |
-| Pay, enter a password or code, grant access | Hands the step to you | Hands the step to you |
-
-You can also set a site to **Allow** (go ahead in both modes), **Ask** (ask in both modes) or **Block** (the agent may not use it), in Settings → Permissions.
-
-> [!NOTE]
-> **You are always in charge.**
->
-> - The agent may not notice every step that needs you. When it does notice one, your settings always apply, and no AI model can change them.
-> - The agent reads text on a web page as information, never as orders. This helps against pages that try to trick it (prompt injection), but no protection is perfect.
-> - So use sites you trust, keep an eye on the agent, and press **Stop** at any time to take over.
-
-## 🤖 Models
-
-| Kind | Providers |
-| --- | --- |
-| Cloud | Anthropic, OpenAI, Google Gemini, OpenRouter, xAI Grok, DeepSeek, Mistral, and any OpenAI-compatible endpoint |
-| Local | Ollama and LM Studio, and other servers (llama.cpp, vLLM and others) through the OpenAI-compatible provider |
-
-- **A model must support tool calling.** Test models in Settings checks each model and marks the ones that cannot be used.
-- **Choose the model and the reasoning effort** in the panel, per conversation. Settings holds the defaults.
-- **Vision models** can also take screenshots of the page and read the images you attach.
-- **Local models** work best for simple, clear tasks. We currently recommend **Qwen3.8 27B**. Give them a context window of 16k tokens or more. Ollama needs `OLLAMA_ORIGINS` to allow the extension, and LM Studio needs CORS on; the provider card shows how when a request is refused.
-- **Voice input** uses OpenAI's or Gemini's voice model with your key from that provider.
-
-## 💡 Try these
-
-> "Summarize this page in a few bullet points."
-
-> "Compare the three laptops I have open and put the prices and specs in a table."
-
-> "Find a portable Bluetooth speaker on Amazon that is water-resistant, under $50, with at least 10 hours of battery."
-
-> "Extract the top 10 headlines from TechCrunch in the last 24 hours and save them as a CSV file."
-
-## 🚀 Quick Start
-
-1. **Install it** from the [Chrome Web Store](https://chromewebstore.google.com/detail/nanobrowser/imbddededgmcgfhfpcjmijokokekbkal): click `Add to Chrome` and confirm. In Edge, first allow extensions from other stores when Edge asks.
-
-2. **Set it up:** the welcome page opens and helps you connect a cloud provider or a local model. You can also do it later in Settings → Providers.
-
-3. **Use it:** click the Nanobrowser icon in the toolbar, or press `Alt+Shift+N`, to open the side panel on the current tab.
-
-## 🔧 Build from Source
-
-1. **Prerequisites:** [Node.js](https://nodejs.org/) 24 LTS and [pnpm](https://pnpm.io/installation) 10 (`corepack` switches to the pinned 10.34.7).
-
-2. **Clone and build:**
-
-   ```bash
-   git clone https://github.com/nanobrowser/nanobrowser.git
-   cd nanobrowser
-   corepack enable # skip if pnpm 10 is already installed
-   pnpm install
-   pnpm build      # builds the extension into dist/
-   ```
-
-3. **Load it in Chrome or Edge:**
-   - Open `chrome://extensions` (in Edge, `edge://extensions`).
-   - Turn on `Developer mode` (top right).
-   - Click `Load unpacked` and choose the `dist` folder.
-
-Then set it up and use it as in the Quick Start. To update, pull the latest source, run `pnpm build` again, and click the reload icon on the Nanobrowser card in the extensions page.
-
-## 🛠️ Development
-
-```bash
-pnpm dev               # run in development mode, reloads on changes; load dist/ in Chrome
-pnpm zip               # make a release build as a zip file in dist-zip/
-pnpm type-check        # check types
-pnpm lint              # check code style and import rules
-pnpm test              # run the unit tests
-pnpm install-chrome    # install Chrome for Testing, used by the browser tests
-pnpm autorun scenarios # run the browser tests on local test pages, without a window
+```sh
+git clone https://github.com/onelouder/nanobrowser-local.git
+cd nanobrowser-local
+corepack enable
+corepack pnpm install --frozen-lockfile
+corepack pnpm build
 ```
 
-**How it works.** The agent sits on top of a **browser control layer**. The layer looks at the page, acts on it, and reports what happened. It has no AI model in it, so the same input always gives the same result. This makes the agent more reliable:
+If your Node installation does not include Corepack, install the pinned pnpm version using [pnpm's installation instructions](https://pnpm.io/installation), then run the commands with `pnpm` instead of `corepack pnpm`.
 
-- **It clicks the right element.** Each element the agent sees gets an ID that is tied to that exact element. If the page changes, an old ID stops working instead of pointing at something else.
-- **It acts like a real user.** Clicks and typing are real browser input. Before acting, the layer checks that the element is visible, not moving, enabled, and not covered by something else.
-- **It tells the agent what really happened.** Each action is sent only once. The result says whether it went through, whether the page responded, and whether the page reached the expected state.
+1. Open `chrome://extensions` or `edge://extensions`.
+2. Enable **Developer mode**.
+3. Click **Load unpacked** and select this repository's `dist` directory.
+4. Pin Nanobrowser in the toolbar and click its icon to open the side panel.
+5. Open **Settings → Providers** and verify your model connection.
 
-The layer talks to the page only through Chrome's `chrome.debugger` API, and uses Puppeteer to keep track of frames on the page. For developers there is a test panel to try the layer by hand: bind a key to the `open-test-panel` command in `chrome://extensions/shortcuts`.
+`corepack pnpm zip` builds `dist-zip/nanobrowser-0.3.0.zip`. To install that package, extract it into a permanent directory and load the extracted folder containing `manifest.json` using **Load unpacked**. The ZIP is an unpacked-extension distribution artifact, not an automatic installer or updater.
 
-[AGENTS.md](AGENTS.md) (also `CLAUDE.md`) explains the design rules, how the repository is laid out and how we work, for people and for AI coding assistants.
+### Update an existing installation
 
-## 🤝 Contributing
+Export important projects first. Pull the latest source, run `corepack pnpm install --frozen-lockfile` and `corepack pnpm build`, then click **Reload** on the existing extension card. Keep the same installation directory and browser profile; removing the extension can delete its local data.
 
-Contributions of all kinds are welcome:
+CI runs formatting, lint, type checking, unit tests, and builds on Ubuntu, macOS, and Windows. Native browser checks have also been run locally on Linux ARM64; CI does not run those browser checks.
 
-- **Share prompts and use cases** on our [Discord server](https://discord.gg/NN3ABHggMK).
-- **Give feedback** on how Nanobrowser works for you, on [Discord](https://discord.gg/NN3ABHggMK) or in [GitHub Discussions](https://github.com/nanobrowser/nanobrowser/discussions).
-- **Contribute code**: read [CONTRIBUTING.md](CONTRIBUTING.md), then open a pull request for a bug fix, a feature or the documentation.
+## Connect a local model
 
-## 🔒 Security
+### ether-10 proxy
 
-If you find a security vulnerability, please **do not** disclose it in public issues, pull requests or discussions. Report it through a [GitHub Security Advisory](https://github.com/nanobrowser/nanobrowser/security/advisories/new), so it can be fixed before it is made public. See [SECURITY.md](SECURITY.md).
+The fork seeds separate **ether-10 GLM-5.3 (LAN)** and **ether-10 GLM-5.3 (Tailscale)** provider cards. These contain environment-specific addresses, not universally reachable services; check and edit their **Base URL** for your installation. The shipped default model is the proxy alias `dsv4-agent`; available aliases depend on your proxy configuration.
 
-## 💬 Community
+1. Open **Settings → Providers** and select the ether-10 connection reachable from this computer.
+2. Confirm its OpenAI-compatible base URL, including `/v1`, and configure a key if your proxy requires one. The shipped presets assume no key.
+3. Fetch the model list and run **Test models**. Listing models alone does not prove that generation or tool calling works; adding a local model reads metadata without automatically running the full inference test.
+4. Select a model that supports tool calling and choose it in the side panel.
+5. Review its context/output limits and provider concurrency before starting a large task.
 
-- [Discord](https://discord.gg/NN3ABHggMK): chat with the team and the community
-- [X](https://x.com/nanobrowser_ai): updates and announcements
-- [GitHub Discussions](https://github.com/nanobrowser/nanobrowser/discussions): ideas and questions
+The LAN and Tailscale cards are alternative connections to the same backend, not automatic failover routes. The concurrency limit applies within this extension instance; multiple browsers or computers require server-side admission control for a shared global limit.
 
-## 👏 Acknowledgments
+### Other servers
 
-Nanobrowser builds on other great open-source projects:
+Use the **Ollama**, **LM Studio**, or **OpenAI-compatible** provider type for your server. `localhost` means the computer running the browser, so a model on another machine needs that machine's reachable address. The provider card offers origin/CORS setup guidance when a local server refuses the extension.
 
-- [Puppeteer](https://github.com/puppeteer/puppeteer)
-- [Vercel AI SDK](https://github.com/vercel/ai)
-- [WXT](https://wxt.dev)
-- [Browser Use](https://github.com/browser-use/browser-use)
+Cloud providers remain optional. Voice input uses the configured OpenAI or Gemini provider; it is not routed through ether-10 automatically.
 
-Thanks to their creators and contributors.
+### Tune budgets
 
-## 📄 License
+- **Settings → Providers:** edit each model's context window and output budget, and the provider's concurrency limit.
+- **Settings → General:** edit the turn, consecutive-error, and no-progress limits.
+- Keep the context window within the server's loaded capacity. Setting a larger number in the extension does not enlarge the model or proxy's actual context.
+- Context includes both prompt and output. Automatic compaction keeps long sessions within the budget and retains the user's messages.
+- Detected local-server limits can lower the effective context. The provider UI displays effective limits so you can check what will actually be used.
 
-Nanobrowser is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
+## Work in a project
+
+Click **Projects** in the side panel to open the full-page workspace.
+
+1. Create a project with an objective, target sites, and instructions. Project objectives and instructions are included in its sessions; notes remain in the workspace unless you share them.
+2. Create a session with a starting task, or move an existing chat from **Unassigned sessions** into the project. Creating a session does not start the agent; the first target site becomes its saved starting page.
+3. Use **Open session tab**, then the toolbar icon to open chat, or **Review and resume** to inspect the model and pages before starting.
+4. Use **Save recent evidence** to retain up to the latest 20 successful page captures from the active conversation branch. Evidence records its source URL and capture time when available.
+5. Search, preview, download, or attach selected files from **Evidence** and **Files**. Storing a file does not automatically send it to the model.
+
+For website investigation, separate sessions by task—for example navigation mapping, form behavior, responsive layout, and content structure—while keeping their evidence in one project. Shortcuts can hold recurring investigation prompts.
+
+### Pause and resume
+
+**Pause and save** stops the active run and persists a checkpoint. **Review and resume** shows the saved model/configuration and missing or blocked pages before another execution attempt starts.
+
+Browser tab IDs are not portable identities. Recovery uses saved URLs, current permissions, and a fresh page observation. Interrupted writes with uncertain outcomes remain marked as uncertain; they are not automatically replayed. Browser login state, cookies, unsaved form values, and the exact previous DOM are not restored from a project bundle.
+
+### Move work to another computer
+
+Use **Export project**, transfer the JSON bundle, and choose **Import project** in the destination workspace. Import creates a new project with new record IDs, preserves retained files and history, and resets sessions to Ask mode. Choose a locally configured model before resuming.
+
+Provider connection profiles, stored API keys, live tab bindings, and pending approvals are excluded. Conversation text and collected evidence are included and may contain private information. There is no automatic cloud synchronization.
+
+## Files and current limits
+
+| Item                   | Current behavior or limit                                                     |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| Project files          | Any file type can be retained and downloaded; 25 MB per file                  |
+| Project storage        | 250 MB and 1,000 files per project                                            |
+| Session attachments    | 100 MB total; supported images, PDFs, and text/source files                   |
+| Project export/import  | 50 MB JSON bundle, including encoded file data and history                    |
+| PDF extraction         | Up to 200 pages, 1,000,000 characters, and 30 seconds; truncation is reported |
+| Saved browser manifest | Up to 50 HTTP(S) tabs per session                                             |
+| Run history display    | Latest 100 attempts per session                                               |
+
+PDF extraction reads embedded text; it does not perform OCR on scanned pages. Text extraction from password-protected PDFs and Office document parsing are not supported; their original bytes can still be retained as project files. Unsupported binary formats can be retained as project files but cannot be sent as readable attachments.
+
+The agent's **`save_file` tool still generates CSV, Markdown, JSON, TXT, and HTML only**. Storing and downloading an uploaded CSS or arbitrary binary file is supported; generating arbitrary file types through `save_file` remains future work. Generated downloads from project sessions are also retained in the project when its storage budget permits.
+
+## Permissions and privacy
+
+| Action                                                 | Ask mode (default)    | Auto mode             |
+| ------------------------------------------------------ | --------------------- | --------------------- |
+| Read pages, follow links, scroll, move between tabs    | Goes ahead            | Goes ahead            |
+| Detected submit, send, delete, or upload               | Asks first            | Goes ahead            |
+| Detected payment, password/code entry, or access grant | Hands the step to you | Hands the step to you |
+
+Set per-site **Allow**, **Ask**, or **Block** rules in **Settings → Permissions**. Detection is best effort; the model cannot change these rules. Page content is treated as data, and **Stop** returns control to you.
+
+Projects, conversations, and settings are stored in the browser profile. Content used for inference goes to the model provider you select, which may run on this machine, another local machine, or a cloud service. See [PRIVACY.md](PRIVACY.md) for retention and transfer details.
+
+## Development and checks
+
+```sh
+corepack pnpm dev
+corepack pnpm exec prettier --check .
+corepack pnpm lint
+corepack pnpm type-check
+corepack pnpm test
+corepack pnpm build
+corepack pnpm zip
+```
+
+Native browser checks use the extension's own `chrome.debugger` integration, without external CDP or a real model endpoint:
+
+```sh
+corepack pnpm install-chrome
+corepack pnpm autorun workspace,restart-restore,panel-attach,inference-controls,permission-warnings --timeout 180
+```
+
+If Chrome for Testing is unavailable for your architecture, set `CHROME_PATH` to a compatible installed Chrome/Chromium executable before running `autorun`. Example environment syntax:
+
+```sh
+# macOS/Linux
+CHROME_PATH="/path/to/chrome" corepack pnpm autorun workspace
+```
+
+```powershell
+# Windows PowerShell
+$env:CHROME_PATH = 'C:\path\to\chrome.exe'
+corepack pnpm autorun workspace
+```
+
+The harness uses an isolated test profile and mock keychain. Reports and screenshots are written to `fixtures/.results/`, which is ignored by Git. Browser checks and real-model evaluations are separate from the cross-platform CI suite.
+
+The deterministic browser control layer observes and acts through `chrome.debugger`; Puppeteer manages frames. The agent sits above that layer. [AGENTS.md](AGENTS.md) describes architecture and contribution constraints; see also [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Planned improvements
+
+These are recommendations, not implemented features: a guided ether-10 connection wizard, importable connection profiles, a connection/queue diagnostics dashboard, investigation templates, and managed distribution/update flows.
+
+## Upstream and license
+
+This fork builds on [Nanobrowser](https://github.com/nanobrowser/nanobrowser), Puppeteer, the Vercel AI SDK, WXT, and PDF.js. Upstream community links and support information are available in the upstream repository. For fork-specific issues, use [this repository's issue tracker](https://github.com/onelouder/nanobrowser-local/issues).
+
+Licensed under Apache-2.0; see [LICENSE](LICENSE). For vulnerability reporting, see [SECURITY.md](SECURITY.md).

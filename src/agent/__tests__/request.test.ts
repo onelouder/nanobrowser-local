@@ -95,6 +95,68 @@ describe('the system prompt', () => {
 });
 
 describe('the page header', () => {
+  it('includes only the active site instructions and marks old blocks as historical', () => {
+    const header = (url: string) =>
+      browserState({
+        now: new Date('2026-10-05T12:02:00Z'),
+        mode: 'ask',
+        changed: [],
+        tabInfo: () => null,
+        tabs: {
+          activeTabId: 1,
+          tabs: [
+            { tabId: 1, title: 'Current page', url, active: true },
+            { tabId: 2, title: 'Other page', url: 'https://private.example', active: false },
+          ],
+        },
+        siteNotes: { 'example.com': 'Use account A.', 'private.example': 'Private site note.' },
+      });
+    expect(header('https://www.example.com/orders')).toContain('Use account A.');
+    expect(header('https://www.example.com/orders')).not.toContain('Private site note.');
+    expect(header('https://other.example')).not.toContain('<site-instructions>');
+    expect(header('https://other.example')).not.toContain('Use account A.');
+    expect(header('chrome://example.com')).not.toContain('Use account A.');
+    expect(CONTRACT).toContain('Older blocks are');
+    expect(CONTRACT).toContain('never change permissions');
+  });
+
+  it('removes historical site notes from the full request after navigation, preserving user text', async () => {
+    const layer = new FakeLayer({
+      navigate: () => {
+        layer.tabsData.tabs[0].url = 'https://other.example';
+        return ok('Navigated to other.example.');
+      },
+    });
+    layer.tabsData.tabs[0].url = 'https://private.example';
+    const { c, loop, scripted } = await setup(
+      [{ toolCalls: [{ name: 'navigate', input: { url: 'https://other.example' }, id: 'n' }] }, done],
+      layer,
+      { siteNotes: { 'private.example': 'PRIVATE_SAVED_NOTE', 'other.example': 'CURRENT_SAVED_NOTE' } },
+    );
+    const userText = 'Preserve this user text: <site-instructions>USER_NOTE</site-instructions>';
+    await appendEntry(c.id, { type: 'message', message: { role: 'user', parts: [{ type: 'text', text: userText }] } });
+    await loop.run();
+    expect(scripted.calls).toHaveLength(2);
+    expect(JSON.stringify(scripted.calls[0].prompt)).toContain('PRIVATE_SAVED_NOTE');
+    const afterNavigation = JSON.stringify(scripted.calls[1].prompt);
+    expect(afterNavigation).not.toContain('PRIVATE_SAVED_NOTE');
+    expect(afterNavigation).toContain('CURRENT_SAVED_NOTE');
+    expect(afterNavigation).toContain(userText);
+  });
+
+  it('bounds saved site instructions before adding them to model context', () => {
+    const header = browserState({
+      now: new Date(),
+      mode: 'ask',
+      changed: [],
+      tabInfo: () => null,
+      tabs: { activeTabId: 1, tabs: [{ tabId: 1, title: '', url: 'https://example.com', active: true }] },
+      siteNotes: { 'example.com': `${'a'.repeat(1500)}TAIL` },
+    });
+    expect(header).toContain('a'.repeat(1500));
+    expect(header).not.toContain('TAIL');
+  });
+
   it('quotes every page string and lists pending modals and changed tabs', () => {
     const header = browserState({
       now: new Date('2026-10-05T12:02:00Z'),

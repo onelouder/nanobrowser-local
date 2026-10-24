@@ -34,6 +34,8 @@ import './languages';
 import './keyboard-a11y';
 import './panel-move-tab';
 import './model-config';
+import './inference-controls';
+import './workspace';
 import './model-picker';
 import './llm-live';
 import './canary-sweep';

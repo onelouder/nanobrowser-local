@@ -1,5 +1,7 @@
 // The user during a run: Continue after the turn cap, Resume after a restart, and the queue of messages typed while the
 // agent works. There is no Take over: Stop gives the page back to the user, and a message carries the task on.
+import { DEFAULT_SETTINGS, settingsStorage } from '@src/store/settings';
+import { useStorage } from '@src/ui/hooks';
 import type { QueuedMessage, RunStatus } from '@src/store/types';
 import { t } from '@src/ui/i18n';
 
@@ -10,14 +12,35 @@ export function RunBar({
   status,
   onContinue,
   onResume,
+  onPause,
 }: {
   status: RunStatus;
   onContinue: () => void;
   onResume: () => void;
+  onPause: () => void;
 }) {
+  const settings = useStorage(settingsStorage, DEFAULT_SETTINGS);
+  if (status === 'running') {
+    return (
+      <div className="mx-2 flex justify-end">
+        <button type="button" className={button} onClick={onPause}>
+          {t('workspace.pause')}
+        </button>
+      </div>
+    );
+  }
+  if (status === 'suspended') {
+    return (
+      <Bar text={t('workspace.paused')}>
+        <button type="button" className={button} onClick={onResume}>
+          {t('workspace.resume')}
+        </button>
+      </Bar>
+    );
+  }
   if (status === 'capped') {
     return (
-      <Bar text={t('run.capped')}>
+      <Bar text={t('run.capped', { turns: settings.turnCap.toLocaleString() })}>
         <button type="button" className={button} onClick={onContinue}>
           {t('run.continue')}
         </button>

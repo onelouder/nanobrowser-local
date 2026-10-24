@@ -3,7 +3,8 @@
 // never dispatched before its intent is on disk), the tool result when it returns, with the layer's structured result
 // beside the text the model saw.
 import type { Result } from '@src/browser-control';
-import { appendEntry, getRun, putRun } from '@src/store/conversations';
+import { appendEntry, getRun } from '@src/store/conversations';
+import { saveCheckpoint } from '@src/store/checkpoints';
 import type {
   Entry,
   EntryOf,
@@ -102,17 +103,29 @@ export class RunWriter {
     return appendEntry(this.conversationId, { type: 'intent', toolCallId, tool, args });
   }
 
-  toolResult(
+  async toolResult(
     toolCallId: string,
     toolName: string,
     text: string,
     isError: boolean,
     result?: unknown,
     image?: { data: string; mediaType: string; note: string; thumb?: string },
+    checkpointPatch?: Partial<RunRecord>,
   ) {
     const parts: MessagePart[] = [{ type: 'tool-result', toolCallId, toolName, text, isError }];
     if (image) parts.push({ type: 'image', ...image });
-    return this.message({ role: 'tool', parts }, { result });
+    const current = checkpointPatch ? await getRun(this.conversationId) : undefined;
+    const checkpoint = current?.runId === this.runId ? { ...current, ...checkpointPatch } : undefined;
+    return appendEntry(
+      this.conversationId,
+      {
+        type: 'message',
+        message: { role: 'tool', parts },
+        meta: { runId: this.runId },
+        ...(result !== undefined ? { result } : {}),
+      },
+      { checkpoint },
+    );
   }
 
   ui(kind: EntryOf<'ui'>['kind'], data: unknown) {
@@ -128,7 +141,7 @@ export class RunWriter {
     const current = await getRun(this.conversationId);
     if (!current || current.runId !== this.runId) return current;
     const next = { ...current, ...patch };
-    await putRun(next);
+    await saveCheckpoint(next);
     return next;
   }
 }

@@ -47,7 +47,8 @@ const productPermissions = flag('--product-permissions');
 const outDir = join(root, '.output', productPermissions ? 'autorun-product' : 'autorun');
 
 if (!flag('--no-build')) {
-  execFileSync('corepack', ['pnpm', 'exec', 'wxt', 'build'], {
+  if (!process.env.npm_execpath) throw new Error('Run this check through pnpm autorun.');
+  execFileSync(process.execPath, [process.env.npm_execpath, 'exec', 'wxt', 'build'], {
     cwd: root,
     stdio: ['ignore', 'ignore', 'inherit'],
     env: { ...process.env, WXT_AUTORUN_URL: base, ...(productPermissions ? { WXT_PRODUCT_PERMISSIONS: '1' } : {}) },

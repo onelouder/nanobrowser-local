@@ -1,7 +1,14 @@
 // Shortcuts in the panel and the settings page: the live list both use, and the editor of Settings → Shortcuts. Only
 // the user writes a shortcut, through this editor; no tool reaches the store.
 import { useEffect, useState } from 'react';
-import { checkShortcut, listShortcuts, onShortcutsChanged, saveShortcut } from '@src/store/shortcuts';
+import {
+  checkShortcut,
+  listShortcuts,
+  onShortcutsChanged,
+  saveShortcut,
+  WORKFLOW_STEPS_MAX,
+  WORKFLOW_STEP_MAX,
+} from '@src/store/shortcuts';
 import type { SavedShortcut, Shortcut } from '@src/store/shortcuts';
 import type { ModelRef, PermissionMode } from '@src/store/types';
 import { Button, Field, Input, Select } from './components';
@@ -58,6 +65,7 @@ export function ShortcutEditor({
             name: draft.name.trim(),
             description: draft.description.trim(),
             startUrl: draft.startUrl?.trim() || undefined,
+            steps: draft.steps?.map(step => step.trim()).filter(Boolean),
           };
           const others = (await listShortcuts()).filter(s => s.id !== draft.id);
           const problem = checkShortcut(shortcut, others);
@@ -98,6 +106,7 @@ export function ShortcutEditor({
           onChange={e => set({ text: e.target.value })}
         />
       </Field>
+      <WorkflowSteps steps={draft.steps ?? []} onChange={steps => set({ steps })} />
       <Field label={t('shortcut.startUrl')}>
         <Input
           aria-label={t('shortcut.startUrl')}
@@ -147,5 +156,38 @@ export function ShortcutEditor({
         </Button>
       </div>
     </form>
+  );
+}
+
+function WorkflowSteps({ steps, onChange }: { steps: string[]; onChange: (steps: string[]) => void }) {
+  return (
+    <Field label={t('shortcut.steps')} hint={t('shortcut.stepsHint')}>
+      <div className="flex flex-col gap-2">
+        {steps.map((step, i) => (
+          <div key={i} className="flex items-start gap-2">
+            <span className="pt-1.5 text-sm text-nb-muted">{i + 1}.</span>
+            <textarea
+              aria-label={t('shortcut.step', { number: i + 1 })}
+              value={step}
+              rows={2}
+              maxLength={WORKFLOW_STEP_MAX}
+              className="min-w-0 flex-1 rounded-lg border border-nb-border bg-nb-bg px-2.5 py-1.5 text-sm focus:border-nb-accent focus:outline-none focus:ring-2 focus:ring-nb-accent/25"
+              onChange={e => onChange(steps.map((value, index) => (index === i ? e.target.value : value)))}
+            />
+            <Button
+              aria-label={t('shortcut.removeStep', { number: i + 1 })}
+              onClick={() => onChange(steps.filter((_, index) => index !== i))}>
+              {t('shortcut.delete')}
+            </Button>
+          </div>
+        ))}
+        <Button
+          className="self-start"
+          disabled={steps.length >= WORKFLOW_STEPS_MAX}
+          onClick={() => onChange([...steps, ''])}>
+          {t('shortcut.addStep')}
+        </Button>
+      </div>
+    </Field>
   );
 }

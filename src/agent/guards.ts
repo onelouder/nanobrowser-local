@@ -10,6 +10,11 @@ export const NO_EFFECT_NUDGE = 2;
 export const NO_EFFECT_STOP = 3;
 export const ERROR_STOP = 5;
 
+export interface GuardLimits {
+  errorCap: number;
+  noEffectCap: number;
+}
+
 export interface GuardVerdict {
   nudge?: string;
   stop?: string;
@@ -45,7 +50,10 @@ export function signature(
 export class Guards {
   state: GuardState;
 
-  constructor(state: GuardState = EMPTY_GUARDS) {
+  constructor(
+    state: GuardState = EMPTY_GUARDS,
+    readonly limits: GuardLimits = { errorCap: ERROR_STOP, noEffectCap: NO_EFFECT_STOP },
+  ) {
     this.state = structuredClone(state);
   }
 
@@ -55,7 +63,8 @@ export class Guards {
     const sig = signature(tool, args, result, isError);
     s.recent = [...s.recent, sig].slice(-REPEAT_WINDOW);
     s.errorsInRow = isError ? s.errorsInRow + 1 : 0;
-    if (s.errorsInRow >= ERROR_STOP) return { stop: `${ERROR_STOP} calls in a row failed.`, guard: 'errors' };
+    if (s.errorsInRow >= this.limits.errorCap)
+      return { stop: `${s.errorsInRow} calls in a row failed.`, guard: 'errors' };
 
     const key = NO_EFFECT_TOOLS.has(tool) ? targetKey(args) : null;
     if (
@@ -66,7 +75,7 @@ export class Guards {
     ) {
       const count = (s.noEffect[key] ?? 0) + 1;
       s.noEffect[key] = count;
-      if (count >= NO_EFFECT_STOP)
+      if (count >= this.limits.noEffectCap)
         return { stop: `${tool} on the same target had no effect ${count} times.`, guard: 'no_effect' };
       if (count >= NO_EFFECT_NUDGE) {
         const signals = result.receipt.effect.signals.join(' · ') || 'no signal';

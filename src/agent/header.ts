@@ -1,7 +1,8 @@
 // The page header: a short block after the last message of every request, never stored, so the cached prefix stays
 // intact. Every page string in it is a quoted fragment; everything else is the extension's own text.
-import { quote } from '@src/browser-control';
+import { quote, siteOf } from '@src/browser-control';
 import type { PendingModal, TabsData } from '@src/browser-control';
+import { CUSTOM_INSTRUCTIONS_MAX } from '@src/store/types';
 import type { PermissionMode } from '@src/store/types';
 
 export interface HeaderInput {
@@ -12,6 +13,7 @@ export interface HeaderInput {
   tabInfo: (tabId: number) => { rev: number; pending: PendingModal[] } | null;
   /** Tabs whose address changed since the model last saw them, not by the agent's own action. */
   changed: Array<{ tabId: number; url: string }>;
+  siteNotes?: Record<string, string>;
 }
 
 function time(now: Date, timeZone?: string): string {
@@ -50,5 +52,9 @@ export function browserState(input: HeaderInput): string {
   for (const c of input.changed) {
     lines.push(`tab ${c.tabId} changed since you last saw it (now ${quote(c.url)}); earlier refs may be stale`);
   }
-  return ['<browser-state>', ...lines, '</browser-state>'].join('\n');
+  const site = active && /^https?:/i.test(active.url) ? siteOf(active.url) : '';
+  const instructions = site ? input.siteNotes?.[site]?.trim().slice(0, CUSTOM_INSTRUCTIONS_MAX) : undefined;
+  const state = ['<browser-state>', ...lines, '</browser-state>'].join('\n');
+  if (!instructions) return state;
+  return [state, '<site-instructions>', `Active site: ${site}`, instructions, '</site-instructions>'].join('\n');
 }

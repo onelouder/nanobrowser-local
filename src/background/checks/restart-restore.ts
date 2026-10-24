@@ -187,21 +187,17 @@ defineCheck({
       throw new Error(`case 1 results: ${JSON.stringify(ra)}`);
     }
 
-    // Only the cards open again, with "If you already did this, press Done".
+    // A handover reopens only while the session still owns its tab.
     const cardB = await until(
       async () => runManager.broker.promptsOf(b)[0],
       p => !!p,
       'case 2 card',
     );
-    const cardC = await until(
-      async () => runManager.broker.promptsOf(c)[0],
-      p => !!p,
-      'case 3 card',
-    );
-    report.cards = [cardB.data.restarted, cardC.data.restarted];
+    if (runManager.broker.promptsOf(c).length) throw new Error('case 3: stale handover card reopened');
+    report.cards = [cardB.data.restarted];
+    report.staleCardDiscarded = true;
     if (!cardB.data.restarted) throw new Error('case 2: the card does not say it reopened');
     await runManager.broker.answer(cardB.id, 'given-back');
-    await runManager.broker.answer(cardC.id, 'given-back');
     const rb = await until(
       async () => results(await activeBranch(b)),
       r => !!r.f,
@@ -236,7 +232,7 @@ defineCheck({
       'case 3 result',
     );
     report.tabGone = rc.f;
-    if (!/outcome unknown: the tab is gone/.test(rc.f) || (await getRun(c))?.status !== 'interrupted') {
+    if (!/delivery unknown; look before retrying/.test(rc.f) || (await getRun(c))?.status !== 'interrupted') {
       throw new Error(`case 3: ${rc.f} ${(await getRun(c))?.status}`);
     }
     await chrome.tabs.remove(page.id!).catch(() => undefined);

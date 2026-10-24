@@ -10,3 +10,7 @@ export * from './legacy';
 export * from './whats-new';
 export * from './analytics';
 export * from './rating';
+
+export * from './projects';
+export * from './checkpoints';
+export * from './project-bundle';

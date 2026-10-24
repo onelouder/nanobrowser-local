@@ -6,7 +6,14 @@ import type { LayerPort } from '@src/agent/ports';
 import type { PageBorder } from './border';
 
 /** The extension's labels, defused wherever page text holds them. */
-export const AGENT_LABELS = ['[Nanobrowser note', 'browser-state', 'agent-notes', 'custom-instructions'];
+export const AGENT_LABELS = [
+  '[Nanobrowser note',
+  'browser-state',
+  'agent-notes',
+  'custom-instructions',
+  'project-instructions',
+  'site-instructions',
+];
 
 /** ask_user waits 15 minutes in agent sessions: a person may be in another window. */
 export const ASK_TIMEOUT_MS = 15 * 60_000;

@@ -54,7 +54,7 @@ export type PanelCommand =
   | { type: 'unqueue'; conversationId: string; id: string }
   | { type: 'new-chat'; tabId: number }
   | { type: 'compact'; conversationId: string }
-  | { type: 'stop' | 'resume' | 'continue'; conversationId: string }
+  | { type: 'stop' | 'pause' | 'resume' | 'continue'; conversationId: string }
   | { type: 'answer'; promptId: string; answer: unknown }
   | { type: 'edit' | 'restart'; conversationId: string; entryId: string; text?: string }
   | { type: 'retry'; conversationId: string }

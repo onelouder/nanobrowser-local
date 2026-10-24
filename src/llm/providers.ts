@@ -16,8 +16,10 @@ export interface ModelSpec {
   apiKey?: string;
   baseUrl?: string;
   maxOutputTokens?: number;
-  /** For a local server: at most this many requests at once to it. */
+  /** At most this many requests at once to the backend. */
   maxConcurrent?: number;
+  /** Aliases of one backend share its request queue. */
+  concurrencyGroup?: string;
 }
 
 export type ProviderOptions = Record<string, Record<string, unknown>>;

@@ -1,5 +1,5 @@
-// Model profiles. Each fact comes from the first source that states it: the overrides stored on the model entry (no
-// Settings control), what a test or a run learnt (`tested`), what the model's API said (`fromApi`), the catalogue's
+// Model profiles. Each fact comes from the first source that states it: the overrides stored on the model entry (including
+// Settings), what a test or a run learnt (`tested`), what the model's API said (`fromApi`), the catalogue's
 // row (src/llm/catalogue.ts), then the endpoint's defaults.
 // Detection from a local server then lowers the window.
 import { defaults, findRow, isCloudEndpoint, sendRule } from './catalogue';
@@ -9,6 +9,8 @@ import type { ProviderKind } from './providers';
 export interface ModelProfile {
   contextWindow: number;
   maxOutput: number;
+  /** Explicit output budget; otherwise requests use the conservative default. */
+  outputLimit?: number;
   vision: boolean;
   /** Whether the model reasons, and whether None is accepted on the wire. Absent when unknown. */
   reasoning?: ReasoningSupport;
@@ -39,7 +41,7 @@ export interface ProfileInput {
   modelName: string;
   /** The provider's base URL: the OpenAI-compatible card is a cloud endpoint only at a public host. */
   baseUrl?: string;
-  overrides?: { contextWindow?: number; maxOutput?: number; vision?: boolean };
+  overrides?: { contextWindow?: number; maxOutput?: number; outputLimit?: number; vision?: boolean };
   /** The window a local server reports it loaded. */
   detectedContext?: number;
   /** What the model's API said at the last test. */
@@ -94,6 +96,7 @@ export function resolveProfile(input: ProfileInput): ModelProfile {
     maxOutput: overrides?.maxOutput || tested?.maxOutput || fromApi?.maxOutput || base.maxOutput,
     vision: overrides?.vision ?? tested?.vision ?? fromApi?.vision ?? base.vision,
   };
+  if (overrides?.outputLimit !== undefined) profile.outputLimit = overrides.outputLimit;
   const reasoning = capabilityFrom(reasons, acceptsNone);
   if (reasoning) profile.reasoning = reasoning;
   if (row?.wire) profile.wire = row.wire;
@@ -126,9 +129,10 @@ export function probeAsk(input: ProfileInput): {
   };
 }
 
-/** The output limit sent with each request: the profile's, capped so a reply cannot take most of a small window. */
-export function requestOutputLimit(profile: ModelProfile): number {
-  return Math.max(1024, Math.min(profile.maxOutput, 16_384, Math.floor(profile.contextWindow / 4)));
+/** Explicit budgets replace the default cap; every request still leaves room for input. */
+export function requestOutputLimit(profile: ModelProfile, window = profile.contextWindow): number {
+  const budget = profile.outputLimit ?? Math.min(16_384, Math.floor(window / 4));
+  return Math.max(1, Math.min(budget, profile.maxOutput, window - 1));
 }
 
 /** What the SDK's `reasoning` option gets for an effort on this model, or undefined for nothing. */

@@ -1,7 +1,7 @@
 // Settings → Shortcuts: add, edit, pin and delete saved shortcuts.
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMemo, useState } from 'react';
-import { deleteShortcut, setPinned } from '@src/store/shortcuts';
+import { deleteShortcut, setPinned, shortcutPrompt } from '@src/store/shortcuts';
 import { providersStorage } from '@src/store/settings';
 import type { ProviderConfig } from '@src/store/settings';
 import { Button } from '@src/ui/components';
@@ -87,7 +87,7 @@ export function ShortcutsSection() {
                   )}
                 </div>
                 {s.description ? <p className="text-xs text-nb-muted">{s.description}</p> : null}
-                <p className="line-clamp-2 whitespace-pre-wrap text-sm">{s.text}</p>
+                <p className="line-clamp-2 whitespace-pre-wrap text-sm">{shortcutPrompt(s)}</p>
                 {s.startUrl ? <p className="truncate text-xs text-nb-muted">{s.startUrl}</p> : null}
               </li>
             ))}

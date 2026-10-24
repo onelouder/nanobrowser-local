@@ -16,6 +16,9 @@ export interface Settings {
   /** The effort for new conversations on a model that reasons; the latest choice in a picker. */
   reasoning: ReasoningEffort;
   turnCap: number;
+  siteNotes: Record<string, string>;
+  errorCap: number;
+  noEffectCap: number;
   /** Custom instructions; at most CUSTOM_INSTRUCTIONS_MAX characters reach the prompt. */
   customInstructions: string;
   theme: Theme;
@@ -44,6 +47,9 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultModel: null,
   reasoning: 'medium',
   turnCap: 100,
+  siteNotes: {},
+  errorCap: 5,
+  noEffectCap: 3,
   customInstructions: '',
   theme: 'system',
   uiLanguage: 'auto',
@@ -58,9 +64,22 @@ export const DEFAULT_SETTINGS: Settings = {
   pageBorder: true,
 };
 
+function runLimit(value: number, max: number, fallback: number): number {
+  return Number.isSafeInteger(value) && value >= 1 && value <= max ? value : fallback;
+}
+
 /** Stored settings over the defaults, so a field added later has its default. */
 export function mergeSettings(stored: unknown): Settings {
-  return { ...DEFAULT_SETTINGS, ...(stored && typeof stored === 'object' ? (stored as Partial<Settings>) : {}) };
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    ...(stored && typeof stored === 'object' ? (stored as Partial<Settings>) : {}),
+  };
+  return {
+    ...settings,
+    turnCap: runLimit(settings.turnCap, 10_000, DEFAULT_SETTINGS.turnCap),
+    errorCap: runLimit(settings.errorCap, 100, DEFAULT_SETTINGS.errorCap),
+    noEffectCap: runLimit(settings.noEffectCap, 100, DEFAULT_SETTINGS.noEffectCap),
+  };
 }
 
 export const settingsStorage = createStorage<Settings>('nb.settings', DEFAULT_SETTINGS, {
@@ -70,8 +89,9 @@ export const settingsStorage = createStorage<Settings>('nb.settings', DEFAULT_SE
 
 export type { ProviderKind };
 
-/** Overrides of a model's profile; Settings has no control for them, the checks set them. */
+/** Model capabilities and the request budgets edited in Settings. */
 export interface ProfileOverrides {
+  outputLimit?: number;
   contextWindow?: number;
   maxOutput?: number;
   vision?: boolean;
@@ -105,12 +125,17 @@ export function learnt(model: ModelEntry): { fromApi?: LearntFacts; tested?: Lea
   return { ...(model.fromApi ? { fromApi: model.fromApi } : {}), ...(tested ? { tested } : {}) };
 }
 
+export const DEFAULT_MAX_CONCURRENT = 4;
+
 export interface ProviderConfig {
   id: string;
   kind: ProviderKind;
   name: string;
   baseUrl?: string;
   models: ModelEntry[];
+  maxConcurrent?: number;
+  /** Provider aliases sharing a backend use the same request queue. */
+  concurrencyGroup?: string;
 }
 
 export const providersStorage = createStorage<ProviderConfig[]>('nb.providers', [], { liveUpdate: true });

@@ -8,6 +8,7 @@ import { upgradeFromOldVersion } from './upgrade';
 import { analyticsReady, listenForSwitches, recordInstall } from './analytics';
 import { setUninstallPage } from './uninstall';
 import { seedLocalEndpoints } from './local-endpoints';
+import { listenForWorkspace } from './workspace';
 import { openWhatsNew } from '@src/store/whats-new';
 import { WHATS_NEW, releaseOf } from '@src/ui/whats-new';
 import { DATA_REQUEST } from '@src/ui/protocol';
@@ -15,6 +16,7 @@ import { DATA_REQUEST } from '@src/ui/protocol';
 export const runManager = new RunManager();
 listenForPanels(runManager);
 listenForSelections(runManager);
+listenForWorkspace(runManager);
 // The watchdog alarm only wakes the worker; starting it is what restores an unfinished run.
 // The welcome page and the first shortcut on install. Unattended check builds are installed on every run, so they
 // skip both.

@@ -8,13 +8,15 @@ import {
   keysStorage,
   learnFacts,
   learnt,
-  LOCAL_KINDS,
+  DEFAULT_MAX_CONCURRENT,
   providersStorage,
   settingsStorage,
   usableModel,
 } from '@src/store/settings';
 import type { LivePair } from '@src/store/types';
 import type { ResolvedModel } from '@src/agent/run';
+import { getConversation } from '@src/store/conversations';
+import { resumePair } from './resume';
 
 export class ModelUnavailable extends Error {}
 
@@ -29,6 +31,9 @@ export async function livePair(conversationId: string | null): Promise<LivePair 
     settingsStorage.get(),
     providersStorage.get(),
   ]);
+  const conversation = conversationId ? await getConversation(conversationId) : undefined;
+  if (conversation?.needsModelSelection) return stored ?? null;
+  if (conversation?.resumeConfig) return resumePair(conversation, stored);
   const model = usableModel(providers, stored?.model, settings.defaultModel);
   if (!model) return null;
   if (stored) return { model, reasoning: stored.reasoning };
@@ -75,14 +80,17 @@ export async function resolveModel(pair: LivePair | null): Promise<ResolvedModel
     detectedContext,
     ...learnt(found.model),
   });
+  const group = found.provider.concurrencyGroup;
+  const peers = group ? providers.filter(p => p.concurrencyGroup === group) : [found.provider];
+  const maxConcurrent = Math.min(...peers.map(p => p.maxConcurrent ?? DEFAULT_MAX_CONCURRENT));
   const chat = createModel({
     kind: found.provider.kind,
     modelName: found.model.name,
     apiKey: keys[found.provider.id],
     baseUrl: found.provider.baseUrl,
     maxOutputTokens: profile.maxOutput,
-    // Ollama and LM Studio take one request at a time by default; more wait in the extension, not on the server.
-    ...(LOCAL_KINDS.has(found.provider.kind) ? { maxConcurrent: 1 } : {}),
+    maxConcurrent,
+    concurrencyGroup: group,
   });
   const learn = (facts: Parameters<NonNullable<ResolvedModel['learn']>>[0]) =>
     void learnFacts(found.provider.id, found.provider.baseUrl, found.model.name, facts);

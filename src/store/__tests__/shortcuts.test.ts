@@ -9,6 +9,7 @@ import {
   parseSkillMd,
   saveShortcut,
   setPinned,
+  shortcutPrompt,
   toSkillMd,
 } from '../index';
 import type { Shortcut } from '../index';
@@ -134,5 +135,37 @@ describe('the store', () => {
     expect(edited).toMatchObject({ description: 'edited', text: 'a2', pinned: true });
     await deleteShortcut(a);
     expect((await listShortcuts()).map(s => s.name)).toEqual(['beta', 'gamma']);
+  });
+});
+
+describe('workflow shortcuts', () => {
+  const workflow: Shortcut = {
+    ...full,
+    steps: ['Open the reports page.', 'Compare "current" and previous totals.\nKeep the currency.', 'Save a CSV.'],
+  };
+
+  it('preserves ordered steps through storage and editing', async () => {
+    const id = await saveShortcut(workflow);
+    const [saved] = await listShortcuts();
+    expect(saved.steps).toEqual(workflow.steps);
+    expect(parseSkillMd(toSkillMd(workflow))).toEqual(workflow);
+    await saveShortcut({ ...saved, steps: ['Read the dashboard.'] });
+    expect((await listShortcuts())[0]).toMatchObject({ id, steps: ['Read the dashboard.'] });
+  });
+
+  it('launches instructions and numbered steps together without changing ordinary prompts', () => {
+    expect(shortcutPrompt(full)).toBe(full.text);
+    expect(shortcutPrompt(workflow)).toContain('1. Open the reports page.');
+    expect(shortcutPrompt(workflow)).toContain('2. Compare "current" and previous totals.');
+    expect(shortcutPrompt(workflow)).toContain('3. Save a CSV.');
+    expect(shortcutPrompt(workflow).startsWith(full.text)).toBe(true);
+  });
+
+  it('rejects oversized or blank workflow steps and ignores malformed stored steps', () => {
+    expect(checkShortcut({ ...full, steps: [''] })).toBe('shortcut.error.steps');
+    expect(checkShortcut({ ...full, steps: ['x'.repeat(4001)] })).toBe('shortcut.error.steps');
+    expect(checkShortcut({ ...full, steps: Array(51).fill('x') })).toBe('shortcut.error.steps');
+    const serialized = toSkillMd(workflow).replace(/ {4}steps: .*/, '    steps: invalid');
+    expect(parseSkillMd(serialized)?.steps).toBeUndefined();
   });
 });
