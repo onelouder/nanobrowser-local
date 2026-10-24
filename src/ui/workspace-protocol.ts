@@ -12,6 +12,7 @@ import type {
 import type { ScopeTab } from './protocol';
 
 export const WORKSPACE_REQUEST = 'nb-workspace';
+export const WORKSPACE_PROJECTS_CHANGED = 'nb-workspace-projects-changed';
 export type ArtifactSummary = Omit<ProjectArtifact, 'data' | 'pdf'>;
 export interface WorkspaceOverview {
   projects: Project[];

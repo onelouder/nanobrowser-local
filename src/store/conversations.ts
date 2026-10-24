@@ -37,6 +37,7 @@ export async function createConversation(init: {
   mode: PermissionMode;
   title?: string;
   tabs?: number[];
+  projectId?: string;
 }): Promise<Conversation> {
   const at = now();
   const conversation: Conversation = {
@@ -49,7 +50,19 @@ export async function createConversation(init: {
     tabs: init.tabs ?? [],
     status: 'idle',
   };
-  await (await db()).put('conversations', conversation);
+  const tx = (await db()).transaction(['projects', 'conversations'], 'readwrite');
+  if (init.projectId) {
+    const project = await tx.objectStore('projects').get(init.projectId);
+    if (!project || project.archived) {
+      await tx.done;
+      throw new Error(
+        project ? 'Restore the project before starting a chat.' : 'The selected project no longer exists.',
+      );
+    }
+    conversation.projectId = project.id;
+  }
+  await tx.objectStore('conversations').put(conversation);
+  await tx.done;
   return conversation;
 }
 

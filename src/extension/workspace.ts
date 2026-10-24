@@ -25,7 +25,7 @@ import {
 import { exportProjectBundle, importProjectBundle } from '@src/store/project-bundle';
 import { settingsStorage } from '@src/store/settings';
 import type { Conversation, ProjectArtifact } from '@src/store/types';
-import { WORKSPACE_REQUEST } from '@src/ui/workspace-protocol';
+import { WORKSPACE_PROJECTS_CHANGED, WORKSPACE_REQUEST } from '@src/ui/workspace-protocol';
 import type { ArtifactSummary, WorkspaceCommand } from '@src/ui/workspace-protocol';
 import type { RunManager } from './run-manager';
 import { collectProjectEvidence } from './workspace-evidence';
@@ -237,7 +237,12 @@ export function listenForWorkspace(manager: RunManager): void {
     if ((message as { type?: string } | null)?.type !== WORKSPACE_REQUEST) return;
     if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('/'))) return;
     void handleWorkspace(manager, message).then(
-      data => reply({ ok: true, data }),
+      data => {
+        if (['save-project', 'archive-project', 'import'].includes((message as { op: string }).op)) {
+          void chrome.runtime.sendMessage({ type: WORKSPACE_PROJECTS_CHANGED }).catch(() => undefined);
+        }
+        reply({ ok: true, data });
+      },
       error => reply({ ok: false, error: error instanceof Error ? error.message : String(error) }),
     );
     return true;
