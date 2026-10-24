@@ -31,6 +31,7 @@ export type PanelCommand =
       type: 'send';
       tabId: number;
       conversationId: string | null;
+      projectId?: string | null;
       text: string;
       attachments: AttachmentRef[];
       context: ContextRef[];

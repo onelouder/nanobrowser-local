@@ -600,7 +600,6 @@
   "workspace.sessionChatHint": "A session is a saved chat. Link one here to keep its history and continue it in this project. Chats already in another project will be moved here.",
   "workspace.chatProject": "Project for this chat",
   "workspace.noProject": "No project",
-  "workspace.saveChatFirst": "Send a message to save this chat, or start a chat from a project.",
   "workspace.pauseToLink": "Pause this chat before changing its project.",
   "workspace.projectUpdated": "Chat project updated.",
   "localFiles.title": "Local files",
@@ -614,5 +613,8 @@
   "localFiles.permissionNeeded": "Allow Chrome to connect to the local file helper, then try again.",
   "localFiles.example": "Try: “Find the oculus-cleanroom Markdown files in Downloads, read them, then continue the build from 04-gaps.md. Save the site in Documents/oculus-site.”",
   "localFiles.writeMode": "Reads work directly. Ask mode confirms writes; Auto mode writes directly. Existing files are replaced only when the tool explicitly requests overwrite.",
-  "localFiles.check": "Check connection"
+  "localFiles.check": "Check connection",
+  "workspace.draftProjectHint": "Choose a project before your first message, or leave this chat unassigned.",
+  "workspace.refreshProjects": "Refresh projects",
+  "workspace.noProjects": "No active projects yet. Use Projects to create one."
 }

@@ -6,6 +6,7 @@ import './page-screenshot';
 import './providers-key';
 import './providers-test';
 import './panel-chat';
+import './panel-project';
 import './panel-history';
 import './panel-cards';
 import './panel-tabs';

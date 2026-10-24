@@ -1088,7 +1088,11 @@ export class RunManager {
       if (conversation && !(await this.#takeUp(connection, conversation.id))) return;
     }
     if (!conversation) {
-      conversation = await createConversation({ mode: command.mode, tabs: [command.tabId] });
+      conversation = await createConversation({
+        mode: command.mode,
+        tabs: [command.tabId],
+        projectId: command.conversationId ? undefined : (command.projectId ?? undefined),
+      });
       // The live pair is written before the conversation's state is published.
       if (command.model) await setLive(conversation.id, { model: command.model, reasoning: command.reasoning });
       await this.#subscribe(connection, command.tabId, conversation.id);

@@ -600,7 +600,6 @@
   "workspace.sessionChatHint": "工作階段就是已儲存的聊天。連結後可保留歷史並在此專案中繼續。屬於其他專案的聊天將移至此處。",
   "workspace.chatProject": "此聊天的專案",
   "workspace.noProject": "無專案",
-  "workspace.saveChatFirst": "傳送訊息以儲存此聊天，或從專案中開始聊天。",
   "workspace.pauseToLink": "請先暫停此聊天，再變更其專案。",
   "workspace.projectUpdated": "聊天專案已更新。",
   "localFiles.title": "本機檔案",
@@ -614,5 +613,8 @@
   "localFiles.permissionNeeded": "請允許 Chrome 連接本機檔案助手，然後重試。",
   "localFiles.example": "試試：「在下載資料夾中尋找並讀取 oculus-cleanroom Markdown 檔案，然後從 04-gaps.md 繼續建置。將網站儲存到 Documents/oculus-site。」",
   "localFiles.writeMode": "讀取直接進行。詢問模式確認寫入，自動模式直接寫入。僅在工具明確要求覆寫時才取代現有檔案。",
-  "localFiles.check": "檢查連線"
+  "localFiles.check": "檢查連線",
+  "workspace.draftProjectHint": "傳送第一則訊息前可選擇專案，也可不連結專案。",
+  "workspace.refreshProjects": "重新整理專案",
+  "workspace.noProjects": "尚無使用中的專案。請在「專案」中建立。"
 }

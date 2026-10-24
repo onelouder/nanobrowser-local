@@ -36,7 +36,7 @@ import { useShortcuts } from '@src/ui/shortcuts';
 import { AutoNotice } from '@src/ui/auto-notice';
 import { HistoryIcon, LogoMark, NewChatIcon, SettingsIcon } from '@src/ui/icons';
 import { websiteUrl } from '@src/ui/links';
-import { requestWorkspace } from '@src/ui/workspace-protocol';
+import { requestWorkspace, WORKSPACE_PROJECTS_CHANGED } from '@src/ui/workspace-protocol';
 import type { WorkspaceList } from '@src/ui/workspace-protocol';
 import { Select } from '@src/ui/components';
 import { LocalFilesButton } from '@src/ui/local-files';
@@ -101,8 +101,12 @@ export function App({
   const [failure, setFailure] = useState<string | null>(null);
   const [state, dispatch] = useReducer(reduce, INITIAL);
   // Mode, model and effort chosen before the first message of a new conversation.
+  const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
   const [draftMode, setDraftMode] = useState<PermissionMode | null>(null);
   const [draftPair, setDraftPair] = useState<LivePair | null>(null);
+  useEffect(() => {
+    if (state.conversationId) setDraftProjectId(null);
+  }, [state.conversationId]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const shortcuts = useShortcuts();
   const [autoNotice, setAutoNotice] = useState(false);
@@ -311,6 +315,7 @@ export function App({
     setConfirmNewChat(false);
     setDraftMode(null);
     setDraftPair(null);
+    setDraftProjectId(null);
     setPendingTabs([]);
     if (client) client.send({ type: 'new-chat', tabId: client.tabId });
   };
@@ -351,6 +356,7 @@ export function App({
       type: 'send',
       tabId: client.tabId,
       conversationId: state.conversationId,
+      ...(!state.conversationId ? { projectId: draftProjectId } : {}),
       text,
       attachments: files.map(f => f.ref),
       context: [
@@ -442,9 +448,10 @@ export function App({
       {!session ? (
         <ChatProject
           key={state.conversationId}
-          projectId={conversation?.projectId ?? null}
+          projectId={state.conversationId ? (conversation?.projectId ?? null) : draftProjectId}
           conversationId={state.conversationId}
           active={active}
+          onDraftProject={setDraftProjectId}
         />
       ) : null}
       {confirmNewChat ? (
@@ -678,35 +685,55 @@ function ChatProject({
   projectId,
   conversationId,
   active,
+  onDraftProject,
 }: {
   projectId: string | null;
   conversationId: string | null;
   active: boolean;
+  onDraftProject: (projectId: string | null) => void;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const requestId = useRef(0);
+  const refresh = useCallback(async () => {
+    const id = ++requestId.current;
+    try {
+      const result = await requestWorkspace<WorkspaceList>({ op: 'list' });
+      if (id !== requestId.current) return;
+      setProjects(result.projects);
+      setError(null);
+      setLoaded(true);
+    } catch (cause) {
+      if (id !== requestId.current) return;
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setLoaded(true);
+    }
+  }, []);
+  const invalidateRequests = useCallback(() => {
+    requestId.current++;
+  }, []);
   useEffect(() => {
-    let current = true;
-    const refresh = () => {
-      void requestWorkspace<WorkspaceList>({ op: 'list' })
-        .then(result => {
-          if (current) setProjects(result.projects);
-        })
-        .catch(cause => {
-          if (current) setError(cause instanceof Error ? cause.message : String(cause));
-        });
+    const read = () => void refresh();
+    const changed = (message: unknown) => {
+      if ((message as { type?: string } | null)?.type === WORKSPACE_PROJECTS_CHANGED) read();
     };
-    refresh();
-    window.addEventListener('focus', refresh);
+    chrome.runtime.onMessage.addListener(changed);
+    window.addEventListener('focus', read);
+    read();
     return () => {
-      current = false;
-      window.removeEventListener('focus', refresh);
+      invalidateRequests();
+      chrome.runtime.onMessage.removeListener(changed);
+      window.removeEventListener('focus', read);
     };
-  }, [projectId]);
+  }, [refresh, projectId, invalidateRequests]);
   const assign = async (nextProjectId: string) => {
-    if (!conversationId) return;
+    if (!conversationId) {
+      onDraftProject(nextProjectId || null);
+      return;
+    }
     setBusy(true);
     setError(null);
     setSaved(false);
@@ -728,21 +755,28 @@ function ChatProject({
         className="truncate text-left hover:underline">
         {t('workspace.savedProject')}: {projectId ? project?.name || t('workspace.title') : t('workspace.noProject')}
       </button>
-      <Select
-        aria-label={t('workspace.chatProject')}
-        value={projectId ?? ''}
-        disabled={!conversationId || active || busy}
-        onChange={e => void assign(e.target.value)}>
-        <option value="">{t('workspace.noProject')}</option>
-        {projects
-          .filter(item => !item.archived || item.id === projectId)
-          .map(item => (
-            <option key={item.id} value={item.id} disabled={item.archived}>
-              {item.name}
-            </option>
-          ))}
-      </Select>
-      {!conversationId ? <p>{t('workspace.saveChatFirst')}</p> : null}
+      <label className="flex flex-col gap-1">
+        <span>{t('workspace.chatProject')}</span>
+        <Select
+          aria-label={t('workspace.chatProject')}
+          value={projectId ?? ''}
+          disabled={!loaded || active || busy}
+          onChange={e => void assign(e.target.value)}>
+          <option value="">{t('workspace.noProject')}</option>
+          {projects
+            .filter(item => !item.archived || item.id === projectId)
+            .map(item => (
+              <option key={item.id} value={item.id} disabled={item.archived}>
+                {item.name}
+              </option>
+            ))}
+        </Select>
+      </label>
+      <button type="button" className="self-start hover:underline" onClick={() => void refresh()}>
+        {t('workspace.refreshProjects')}
+      </button>
+      {!conversationId ? <p>{t('workspace.draftProjectHint')}</p> : null}
+      {loaded && !projects.some(item => !item.archived) ? <p>{t('workspace.noProjects')}</p> : null}
       {active ? <p>{t('workspace.pauseToLink')}</p> : null}
       {error ? (
         <p role="alert" className="text-red-700 dark:text-red-300">

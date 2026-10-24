@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import type { PanelConnection } from '../run-manager';
+import type { PanelCommand } from '@src/ui/protocol';
 
 vi.mock('../panel', () => ({ PANEL_PATH: 'sidepanel.html' }));
 vi.mock('../layer', () => ({ addPromptRoute: vi.fn(), controllerReady: Promise.resolve({ closeSession: vi.fn() }) }));
@@ -46,6 +47,12 @@ function browser() {
   tabs.set(1, { id: 1, url: 'https://unrelated.example/', title: 'Unrelated', active: true, windowId: 1 });
   let nextId = 100;
   const api = {
+    runtime: {
+      id: 'test-extension',
+      getURL: (path: string) => `chrome-extension://test-extension${path}`,
+      onMessage: event(),
+      sendMessage: vi.fn(async () => undefined),
+    },
     storage: { local: area(local), session: area({}), onChanged: event() },
     debugger: { onDetach: event() },
     tabs: {
@@ -295,4 +302,113 @@ it('keeps a workspace conversation pinned when its target tab moves to another c
   );
   pinned.unsubscribe?.();
   ordinary.unsubscribe?.();
+});
+
+const PROJECT = {
+  name: 'New chat project',
+  objective: 'Draft objective marker',
+  instructions: 'Draft instructions marker',
+  targetSites: [],
+  notes: '',
+  archived: false,
+};
+
+function draftSend(projectId?: string): Extract<PanelCommand, { type: 'send' }> {
+  return {
+    type: 'send',
+    tabId: 1,
+    conversationId: null,
+    projectId,
+    text: 'First message',
+    attachments: [],
+    context: [],
+    mode: 'ask',
+    model: { providerId: 'p', model: 'm' },
+    reasoning: 'none',
+  };
+}
+
+it('saves the draft project before publishing the first chat snapshot and building its first prompt', async () => {
+  browser();
+  const { saveProject } = await import('@src/store/projects');
+  const { getConversation } = await import('@src/store/conversations');
+  const { RunManager } = await import('../run-manager');
+  const { AgentLoop } = await import('@src/agent/loop');
+  const { ZERO_USAGE } = await import('@src/store/types');
+  const run = vi.spyOn(AgentLoop.prototype, 'run').mockResolvedValue({ status: 'done', usage: ZERO_USAGE, turns: 1 });
+  const project = await saveProject(PROJECT);
+  const manager = new RunManager();
+  const sink = vi.fn();
+  const connection: PanelConnection = { tabId: 1, conversationId: null, sink };
+  manager.connections.add(connection);
+  await manager.handle(connection, draftSend(project.id));
+  await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
+  const loop = run.mock.contexts[0] as InstanceType<typeof AgentLoop>;
+  expect(loop.options.system).toContain(PROJECT.objective);
+  expect(loop.options.system).toContain(PROJECT.instructions);
+  expect(await getConversation(connection.conversationId!)).toMatchObject({ projectId: project.id });
+  const first = sink.mock.calls.find(([event]) => event.type === 'snapshot');
+  expect(first?.[0].conversation.projectId).toBe(project.id);
+  await vi.waitFor(() => expect(manager.isRunning(connection.conversationId!)).toBe(false));
+  connection.unsubscribe?.();
+  run.mockRestore();
+});
+
+it.each(['archived', 'deleted'])('rejects a %s draft project without creating an orphan conversation', async state => {
+  browser();
+  const { saveProject } = await import('@src/store/projects');
+  const { listConversations } = await import('@src/store/conversations');
+  const { db } = await import('@src/store/db');
+  const { RunManager } = await import('../run-manager');
+  const project = await saveProject({ ...PROJECT, archived: state === 'archived' });
+  if (state === 'deleted') await (await db()).delete('projects', project.id);
+  const manager = new RunManager();
+  const connection: PanelConnection = { tabId: 1, conversationId: null, sink: vi.fn() };
+  await expect(manager.handle(connection, draftSend(project.id))).rejects.toThrow(/project/);
+  expect(await listConversations()).toEqual([]);
+  expect(connection.conversationId).toBeNull();
+  expect(connection.sink).not.toHaveBeenCalled();
+});
+
+it('does not reassign an existing conversation using the draft project field', async () => {
+  browser();
+  const { saveProject } = await import('@src/store/projects');
+  const { createConversation, getConversation } = await import('@src/store/conversations');
+  const { RunManager } = await import('../run-manager');
+  const original = await saveProject(PROJECT);
+  const other = await saveProject({ ...PROJECT, name: 'Another project' });
+  const chat = await createConversation({ mode: 'ask', projectId: original.id });
+  const manager = new RunManager();
+  const connection: PanelConnection = { tabId: 1, conversationId: chat.id, sink: vi.fn() };
+  manager.connections.add(connection);
+  await manager.handle(connection, { ...draftSend(other.id), conversationId: chat.id });
+  await vi.waitFor(() => expect(manager.isRunning(chat.id)).toBe(false));
+  expect((await getConversation(chat.id))?.projectId).toBe(original.id);
+  connection.unsubscribe?.();
+});
+
+it('broadcasts project-list changes after successful create, archive and import requests', async () => {
+  const api = browser();
+  const { RunManager } = await import('../run-manager');
+  const { listenForWorkspace } = await import('../workspace');
+  const { exportProjectBundle } = await import('@src/store/project-bundle');
+  const { WORKSPACE_REQUEST, WORKSPACE_PROJECTS_CHANGED } = await import('@src/ui/workspace-protocol');
+  listenForWorkspace(new RunManager());
+  const listener = api.runtime.onMessage.addListener.mock.calls[0][0];
+  const sender = { id: api.runtime.id, url: api.runtime.getURL('/workspace.html') };
+  const reply = vi.fn();
+  listener({ type: WORKSPACE_REQUEST, op: 'save-project', project: PROJECT }, sender, reply);
+  await vi.waitFor(() => expect(reply).toHaveBeenCalledOnce());
+  const project = reply.mock.calls[0][0].data;
+  listener({ type: WORKSPACE_REQUEST, op: 'archive-project', projectId: project.id, archived: true }, sender, reply);
+  await vi.waitFor(() => expect(reply).toHaveBeenCalledTimes(2));
+  listener({ type: WORKSPACE_REQUEST, op: 'import', text: await exportProjectBundle(project.id) }, sender, reply);
+  await vi.waitFor(() => expect(reply).toHaveBeenCalledTimes(3));
+  expect(api.runtime.sendMessage.mock.calls).toEqual(
+    Array.from({ length: 3 }, () => [{ type: WORKSPACE_PROJECTS_CHANGED }]),
+  );
+  listener({ type: WORKSPACE_REQUEST, op: 'save-project', project: { ...PROJECT, name: '' } }, sender, reply);
+  await vi.waitFor(() => expect(reply).toHaveBeenCalledTimes(4));
+  expect(reply.mock.calls[3][0].ok).toBe(false);
+  expect(api.runtime.sendMessage).toHaveBeenCalledTimes(3);
 });

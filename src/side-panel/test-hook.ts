@@ -92,6 +92,16 @@ export function installTestHook(tabId: number, target: 'panel' | 'options' | 'wo
         box?.click();
         return sendResponse({ ok: !!box });
       }
+      case 'select-state': {
+        const select = document.querySelector<HTMLSelectElement>(`select[aria-label="${message.label}"]`);
+        return sendResponse({
+          ok: !!select,
+          value: select?.value,
+          disabled: select?.disabled,
+          focused: document.hasFocus(),
+          options: select ? [...select.options].map(option => ({ value: option.value, text: option.text })) : [],
+        });
+      }
       case 'select': {
         const select = document.querySelector<HTMLSelectElement>(`select[aria-label="${message.label}"]`);
         const menu = document.querySelector<HTMLButtonElement>(

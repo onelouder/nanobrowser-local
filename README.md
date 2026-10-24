@@ -43,11 +43,11 @@ If your Node installation does not include Corepack, install the pinned pnpm ver
 4. Pin Nanobrowser in the toolbar and click its icon to open the side panel.
 5. Open **Settings → Providers** and verify your model connection.
 
-`corepack pnpm zip` builds `dist-zip/nanobrowser-0.3.1.zip`. To install that package, extract it into a permanent directory and load the extracted folder containing `manifest.json` using **Load unpacked**. The ZIP is an unpacked-extension distribution artifact, not an automatic installer or updater.
+`corepack pnpm zip` builds `dist-zip/nanobrowser-0.3.2.zip`. To install that package, extract it into a permanent directory and load the extracted folder containing `manifest.json` using **Load unpacked**. The ZIP is an unpacked-extension distribution artifact, not an automatic installer or updater.
 
 ### Update an existing installation
 
-Export important projects first. Pull the latest source, run `corepack pnpm install --frozen-lockfile` and `corepack pnpm build`, then click **Reload** on the existing extension card. Confirm **Settings → About** shows version **0.3.1**. If installing from a ZIP, replace the files in your existing installation directory with the extracted build before clicking Reload. Keep the same installation directory and browser profile; removing the extension can delete its local data.
+Export important projects first. Pull the latest source, run `corepack pnpm install --frozen-lockfile` and `corepack pnpm build`, then click **Reload** on the existing extension card. Confirm **Settings → About** shows version **0.3.2**. If installing from a ZIP, replace the files in your existing installation directory with the extracted build before clicking Reload. Keep the same installation directory and browser profile; removing the extension can delete its local data.
 
 CI runs formatting, lint, type checking, unit tests, and builds on Ubuntu, macOS, and Windows. Native browser checks have also been run locally on Linux ARM64; CI does not run those browser checks.
 
@@ -112,7 +112,7 @@ Click **Projects** in the side panel to open the full-page workspace.
 4. Use **Save recent evidence** to retain up to the latest 20 successful page captures from the active conversation branch. Evidence records its source URL and capture time when available.
 5. Search, preview, or download files from **Evidence** and **Files**. Select files, choose the session, and click **Add selected to session** to return to that chat with the files attached. They remain available when you send the next prompt; storing a file alone does not send it to the model.
 
-The project selector remains available at the top of the side panel. Choose a project there to link the saved conversation directly, or choose **No project** to unlink it. Pause a running chat before changing its project. You can also open any project independently and use **Link existing chat**; opening Projects from the chat is not required. The workspace and open side panel update to show the same assignment. If a session’s website tab closes or moves to another conversation, use **Reconnect website** in the project chat before sending another message.
+The **Project for this chat** selector is available before the first message. Choose a project, then send your message; the new conversation is saved into that project and its instructions apply from the first request. Newly created or imported projects appear in open chat dropdowns automatically. For saved chats, choosing a project moves the conversation directly; **No project** unlinks it. Use **Refresh projects** if you need to reload the list. Pause a running chat before changing its project. You can also open any project independently and use **Link existing chat**; opening Projects from the chat is not required. The workspace and open side panel update to show the same assignment. If a session’s website tab closes or moves to another conversation, use **Reconnect website** in the project chat before sending another message.
 
 For website investigation, separate sessions by task—for example navigation mapping, form behavior, responsive layout, and content structure—while keeping their evidence in one project. Shortcuts can hold recurring investigation prompts.
 
