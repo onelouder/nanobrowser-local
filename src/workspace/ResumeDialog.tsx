@@ -21,12 +21,14 @@ export function ResumeDialog({
   busy,
   run,
   onClose,
+  onResumed,
 }: {
   preview: ResumePreview;
   error: string | null;
   busy: boolean;
   run: RunAction;
   onClose: () => void;
+  onResumed: () => void;
 }) {
   const providers = useStorage(providersStorage, EMPTY_PROVIDERS);
   const [model, setModel] = useState(
@@ -40,6 +42,7 @@ export function ResumeDialog({
     const [providerId, name] = model.split('\u0000');
     const pair: LivePair = { model: { providerId, model: name }, reasoning };
     await requestWorkspace({ op: 'resume', conversationId: preview.conversationId, reopenTabs, model: pair });
+    onResumed();
     onClose();
   };
   return (

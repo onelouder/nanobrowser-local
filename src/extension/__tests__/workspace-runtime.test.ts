@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
+import type { PanelConnection } from '../run-manager';
 
 vi.mock('../panel', () => ({ PANEL_PATH: 'sidepanel.html' }));
 vi.mock('../layer', () => ({ addPromptRoute: vi.fn(), controllerReady: Promise.resolve({ closeSession: vi.fn() }) }));
@@ -126,6 +127,18 @@ describe('workspace runtime after session storage loss', () => {
     expect(await manager.scope.conversationOf(1)).toBeNull();
   });
 
+  it('prepares a bound chat target without activating it or starting a run', async () => {
+    const { manager, c, api } = await restoredSession();
+    expect(await manager.workspaceOpen(c.id, false)).toBe(101);
+    expect(api.tabs.create).toHaveBeenCalledWith({ url: 'https://example.com/', active: false });
+    expect(await manager.workspaceOpen(c.id, false)).toBe(101);
+    expect(api.tabs.create).toHaveBeenCalledTimes(1);
+    expect(api.tabs.update).not.toHaveBeenCalled();
+    expect(await manager.scope.conversationOf(101)).toBe(c.id);
+    expect(await manager.scope.conversationOf(1)).toBeNull();
+    expect(manager.isRunning(c.id)).toBe(false);
+  });
+
   it('deduplicates Resume, creates fresh tab IDs, and stops before a model request when observation fails', async () => {
     const { manager, c, api } = await restoredSession();
     const request = vi.fn();
@@ -211,4 +224,75 @@ it('pauses a restored question without leaving a stale awaiting-user status', as
   await manager.workspacePause(c.id);
   expect(await getRun(c.id)).toMatchObject({ status: 'suspended', pendingPrompt: undefined });
   expect(manager.broker.promptsOf(c.id)).toHaveLength(0);
+});
+
+it('refreshes subscribed chat after workspace assignment and file attachment', async () => {
+  const { manager, c } = await restoredSession();
+  const { handleWorkspace } = await import('../workspace');
+  const { saveProject, putArtifact } = await import('@src/store/projects');
+  const sink = vi.fn();
+  const connection: PanelConnection = { tabId: 1, conversationId: c.id, sink };
+  await manager.handle(connection, { type: 'subscribe', tabId: 1, conversationId: c.id });
+  const project = await saveProject({
+    name: 'Oculus rebuild',
+    objective: '',
+    targetSites: [],
+    instructions: '',
+    notes: '',
+    archived: false,
+  });
+  await handleWorkspace(manager, { op: 'assign', conversationId: c.id, projectId: project.id });
+  expect(sink.mock.calls.at(-1)?.[0]).toMatchObject({
+    type: 'snapshot',
+    conversation: { id: c.id, projectId: project.id },
+  });
+  const file = await putArtifact({
+    projectId: project.id,
+    name: '04-gaps.md',
+    mimeType: 'text/markdown',
+    kind: 'file',
+    data: new Blob(['# Remaining gaps']),
+  });
+  await handleWorkspace(manager, { op: 'attach-artifacts', conversationId: c.id, artifactIds: [file.id] });
+  const snapshot = sink.mock.calls.at(-1)?.[0];
+  expect(snapshot).toMatchObject({ type: 'snapshot', conversation: { id: c.id, projectId: project.id } });
+  expect(JSON.stringify(snapshot.entries)).toContain('04-gaps.md');
+  connection.unsubscribe?.();
+});
+
+it('keeps a workspace conversation pinned when its target tab moves to another chat', async () => {
+  const { manager, c, pair } = await restoredSession();
+  const { createConversation, activeBranch } = await import('@src/store/conversations');
+  const other = await createConversation({ mode: 'ask' });
+  const targetId = await manager.workspaceOpen(c.id, false);
+  const pinned: PanelConnection = { tabId: targetId, conversationId: c.id, sink: vi.fn() };
+  const ordinary: PanelConnection = { tabId: targetId, conversationId: c.id, sink: vi.fn() };
+  manager.connections.add(pinned);
+  manager.connections.add(ordinary);
+  await manager.handle(pinned, { type: 'subscribe', tabId: targetId, conversationId: c.id, pinned: true });
+  await manager.handle(ordinary, { type: 'subscribe', tabId: targetId, conversationId: c.id });
+  await manager.scope.add(other.id, targetId, 'start', { move: true });
+  await vi.waitFor(() => expect(ordinary.conversationId).toBe(other.id));
+  expect(pinned.conversationId).toBe(c.id);
+  for (const conversationId of [c.id, other.id]) {
+    await manager.handle(pinned, {
+      type: 'send',
+      conversationId,
+      tabId: targetId,
+      text: 'Must not reach another chat',
+      attachments: [],
+      context: [],
+      mode: 'ask',
+      model: pair.model,
+      reasoning: pair.reasoning,
+    });
+  }
+  expect(await manager.scope.conversationOf(targetId)).toBe(other.id);
+  expect(JSON.stringify(await activeBranch(c.id))).not.toContain('Must not reach');
+  expect(JSON.stringify(await activeBranch(other.id))).not.toContain('Must not reach');
+  expect(pinned.sink).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'error', message: 'scope.workspaceChanged' }),
+  );
+  pinned.unsubscribe?.();
+  ordinary.unsubscribe?.();
 });

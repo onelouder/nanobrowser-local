@@ -14,11 +14,12 @@ import { ProjectForm, ProjectOverview } from './ProjectForm';
 import type { ProjectDraft } from './ProjectForm';
 import { ResumeDialog } from './ResumeDialog';
 import { NewSession, Sessions } from './Sessions';
+import { Chat } from './Chat';
 import type { RunAction } from './Sessions';
 
 const EMPTY: WorkspaceList = { projects: [], sessions: [] };
-type Section = 'overview' | 'sessions' | 'evidence' | 'files';
-const SECTIONS: Section[] = ['overview', 'sessions', 'evidence', 'files'];
+type Section = 'overview' | 'chat' | 'sessions' | 'evidence' | 'files';
+const SECTIONS: Section[] = ['overview', 'chat', 'sessions', 'evidence', 'files'];
 
 export function App() {
   useLanguage();
@@ -26,7 +27,12 @@ export function App() {
   const [list, setList] = useState<WorkspaceList>(EMPTY);
   const [view, setView] = useState<WorkspaceProject | null>(null);
   const [projectId, setProjectId] = useState<string | null>(new URLSearchParams(location.search).get('projectId'));
-  const [section, setSection] = useState<Section>('overview');
+  const [sessionId, setSessionId] = useState<string | null>(new URLSearchParams(location.search).get('conversationId'));
+  const [section, setSection] = useState<Section>(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('section') === 'overview') return 'overview';
+    return params.has('conversationId') && params.get('resume') !== '1' ? 'chat' : 'overview';
+  });
   const [editing, setEditing] = useState<'new' | 'edit' | null>(null);
   const [preview, setPreview] = useState<ResumePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +40,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [chatRevision, setChatRevision] = useState(0);
   const initialized = useRef(false);
   const requestId = useRef(0);
   const resumeRequested = useRef(false);
@@ -56,7 +63,7 @@ export function App() {
         initialized.current = true;
         const conversationId = new URLSearchParams(location.search).get('conversationId');
         const wanted = overview.sessions.find(s => s.id === conversationId)?.projectId;
-        if (wanted && wanted !== projectId) setProjectId(wanted);
+        if (wanted && !projectId) setProjectId(wanted);
       }
     } catch (cause) {
       if (id === requestId.current) {
@@ -112,7 +119,11 @@ export function App() {
     setEditing(null);
     setSection('overview');
     setNotice(null);
-    history.replaceState(null, '', id ? `?projectId=${encodeURIComponent(id)}` : location.pathname);
+    if (!id) setSessionId(null);
+    const query = new URLSearchParams({ section: 'overview' });
+    if (id) query.set('projectId', id);
+    if (id && sessionId) query.set('conversationId', sessionId);
+    history.replaceState(null, '', `?${query}`);
   };
   const saveProject = (project: ProjectDraft) =>
     void run(async () => {
@@ -131,6 +142,36 @@ export function App() {
     setSection('overview');
   };
   const unassigned = list.sessions.filter(s => !s.projectId);
+  const linkedSession = list.sessions.find(s => s.id === sessionId);
+  const availableSessions = view ? view.sessions : unassigned;
+  const chatSession =
+    sessionId && !linkedSession ? undefined : (availableSessions.find(s => s.id === sessionId) ?? availableSessions[0]);
+  const openChat = (id: string) => {
+    const targetProject = list.sessions.find(s => s.id === id)?.projectId ?? projectId;
+    setSessionId(id);
+    setChatRevision(value => value + 1);
+    setSection('chat');
+    if (targetProject !== projectId) setProjectId(targetProject);
+    const query = new URLSearchParams({ conversationId: id });
+    if (targetProject) query.set('projectId', targetProject);
+    history.replaceState(null, '', `?${query}`);
+  };
+  const review = (id: string) =>
+    void run(async () => {
+      setPreview(await requestWorkspace<ResumePreview>({ op: 'resume-preview', conversationId: id }));
+    });
+  const chat = chatSession ? (
+    <Chat
+      key={`${chatSession.id}:${chatRevision}`}
+      session={chatSession}
+      sessions={availableSessions}
+      onSelect={openChat}
+      onNewSession={() => setSection('sessions')}
+      onResume={() => review(chatSession.id)}
+    />
+  ) : (
+    <p className="text-sm text-nb-muted">{t('workspace.noSessions')}</p>
+  );
 
   return (
     <div className="min-h-screen bg-nb-canvas text-nb-fg">
@@ -204,22 +245,52 @@ export function App() {
           {!editing && view ? (
             <>
               <ProjectHeader view={view} busy={busy} run={run} onEdit={() => setEditing('edit')} />
+              {linkedSession && linkedSession.projectId !== view.project.id ? (
+                <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-nb-border bg-nb-bg p-3 text-sm">
+                  <span>
+                    {t('workspace.currentChat')}: {linkedSession.title}
+                  </span>
+                  <Button
+                    disabled={
+                      busy || view.project.archived || ['running', 'awaiting_user'].includes(linkedSession.status)
+                    }
+                    onClick={() =>
+                      void run(async () => {
+                        await requestWorkspace({
+                          op: 'assign',
+                          conversationId: linkedSession.id,
+                          projectId: view.project.id,
+                        });
+                        setNotice(t('workspace.chatLinked'));
+                        setSection('chat');
+                      })
+                    }>
+                    {t('workspace.linkChat')}
+                  </Button>
+                </div>
+              ) : null}
               <nav className="my-5 flex flex-wrap gap-2" aria-label={t('workspace.title')}>
                 {SECTIONS.map(item => (
                   <Button
                     key={item}
                     variant={section === item ? 'primary' : 'ghost'}
                     aria-current={section === item ? 'page' : undefined}
-                    onClick={() => setSection(item)}>
+                    onClick={() => {
+                      if (item === 'chat' && chatSession) openChat(chatSession.id);
+                      else setSection(item);
+                    }}>
                     {t(`workspace.${item}`)}
                   </Button>
                 ))}
               </nav>
               <section className="rounded-xl border border-nb-border bg-nb-bg p-5">
                 {section === 'overview' ? <ProjectOverview project={view.project} /> : null}
+                {section === 'chat' ? chat : null}
                 {section === 'sessions' ? (
                   <div className="flex flex-col gap-4">
-                    {!view.project.archived ? <NewSession projectId={view.project.id} busy={busy} run={run} /> : null}
+                    {!view.project.archived ? (
+                      <NewSession projectId={view.project.id} busy={busy} run={run} onCreated={openChat} />
+                    ) : null}
                     <Sessions
                       sessions={view.sessions}
                       projects={list.projects}
@@ -227,13 +298,8 @@ export function App() {
                       runs={view.runs}
                       busy={busy}
                       run={run}
-                      onResume={id =>
-                        void run(async () =>
-                          setPreview(
-                            await requestWorkspace<ResumePreview>({ op: 'resume-preview', conversationId: id }),
-                          ),
-                        )
-                      }
+                      onOpen={openChat}
+                      onResume={review}
                     />
                   </div>
                 ) : null}
@@ -244,6 +310,11 @@ export function App() {
                     kind={section === 'evidence' ? 'evidence' : 'file'}
                     artifacts={view.artifacts}
                     sessions={view.sessions}
+                    selectedSessionId={chatSession?.id ?? null}
+                    onAttached={id => {
+                      openChat(id);
+                      setNotice(t('workspace.filesAttached'));
+                    }}
                     busy={busy}
                     run={run}
                   />
@@ -255,19 +326,20 @@ export function App() {
             <section className="rounded-xl border border-nb-border bg-nb-bg p-5">
               <h2 className="mb-4 text-xl font-semibold">{t('workspace.unassigned')}</h2>
               {!list.projects.length ? <p className="mb-4 text-sm text-nb-muted">{t('workspace.empty')}</p> : null}
-              <Sessions
-                sessions={unassigned}
-                projects={list.projects}
-                checkpoints={[]}
-                runs={[]}
-                busy={busy}
-                run={run}
-                onResume={id =>
-                  void run(async () =>
-                    setPreview(await requestWorkspace<ResumePreview>({ op: 'resume-preview', conversationId: id })),
-                  )
-                }
-              />
+              {section === 'chat' && chatSession ? (
+                chat
+              ) : (
+                <Sessions
+                  sessions={unassigned}
+                  projects={list.projects}
+                  checkpoints={[]}
+                  runs={[]}
+                  busy={busy}
+                  run={run}
+                  onOpen={openChat}
+                  onResume={review}
+                />
+              )}
             </section>
           ) : null}
         </main>
@@ -279,6 +351,7 @@ export function App() {
           error={error}
           busy={busy}
           run={run}
+          onResumed={() => openChat(preview.conversationId)}
           onClose={() => setPreview(null)}
         />
       ) : null}

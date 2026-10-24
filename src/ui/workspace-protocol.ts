@@ -49,7 +49,8 @@ export type WorkspaceCommand =
   | { op: 'archive-project'; projectId: string; archived: boolean }
   | { op: 'assign'; conversationId: string; projectId: string | null }
   | { op: 'create-session'; projectId: string; title: string; objective: string }
-  | { op: 'open-session' | 'resume-preview' | 'pause' | 'collect-evidence'; conversationId: string }
+  | { op: 'open-session'; conversationId: string; activate?: boolean }
+  | { op: 'resume-preview' | 'pause' | 'collect-evidence'; conversationId: string }
   | { op: 'resume'; conversationId: string; reopenTabs: boolean; model?: LivePair }
   | {
       op: 'add-artifact';

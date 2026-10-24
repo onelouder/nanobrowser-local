@@ -81,10 +81,14 @@ export function installTestHook(tabId: number, target: 'panel' | 'options' | 'wo
         return sendResponse({ ok: !!input });
       }
       case 'toggle': {
-        // A checkbox in the label whose text starts with `label`.
-        const box = [...document.querySelectorAll('label')]
-          .find(l => l.innerText.trim().startsWith(message.label))
-          ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+        const named = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"][aria-label]')].find(
+          input => input.getAttribute('aria-label') === message.label,
+        );
+        const box =
+          named ??
+          [...document.querySelectorAll('label')]
+            .find(l => l.innerText.trim().startsWith(message.label))
+            ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
         box?.click();
         return sendResponse({ ok: !!box });
       }

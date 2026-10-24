@@ -457,15 +457,17 @@ export class AgentLoop {
     this.options.emit({ type: 'message_end', entry: userDisplay(updated) });
   }
 
-  /**
-   * The files attached to the newest user message: their text inside the boundary with this run's nonce, or their image
-   * after its fixed line, added to the message once.
-   */
+  /** Workspace files may precede the user's next prompt; inline every pending attachment on this branch once. */
   async #inlineAttachments(): Promise<void> {
-    const user = [...(await activeBranch(this.options.conversationId))]
-      .reverse()
-      .find((e): e is EntryOf<'message'> => e.type === 'message' && e.message.role === 'user' && !e.appOwned);
-    if (!user?.message.parts.some(p => (p.type === 'attachment' || p.type === 'selection') && !p.inlined)) return;
+    for (const entry of await activeBranch(this.options.conversationId)) {
+      if (entry.type !== 'message' || entry.message.role !== 'user' || entry.appOwned) continue;
+      if (entry.message.parts.some(p => (p.type === 'attachment' || p.type === 'selection') && !p.inlined)) {
+        await this.#inlineMessageAttachments(entry);
+      }
+    }
+  }
+
+  async #inlineMessageAttachments(user: EntryOf<'message'>): Promise<void> {
     const { profile } = this.options.model;
     const added = await attachmentParts(user.message.parts, {
       conversationId: this.options.conversationId,

@@ -579,5 +579,17 @@
   "workspace.previewTruncated": "Preview shows the first 100,000 characters. Download the file for the full content.",
   "workspace.pdfStored": "Original file saved. Text extraction is unavailable.",
   "workspace.pdfTruncated": "PDF text extraction was partial; download the original to inspect the remaining pages.",
-  "workspace.contextHint": "Objective and instructions apply to sessions. Notes stay in the workspace unless you share them."
+  "workspace.contextHint": "Objective and instructions apply to sessions. Notes stay in the workspace unless you share them.",
+  "workspace.chat": "Chat",
+  "workspace.openChat": "Open chat",
+  "workspace.showWebsite": "Open website and side-panel chat",
+  "workspace.chatHint": "Open this conversation in the project workspace without starting a run.",
+  "workspace.currentChat": "Current conversation",
+  "workspace.linkChat": "Move this conversation into this project",
+  "workspace.chatLinked": "Conversation linked to this project.",
+  "workspace.filesAttached": "Files added to this conversation. Send a message below to continue.",
+  "workspace.disconnected": "The website tab is no longer connected",
+  "workspace.reconnect": "Reconnect website",
+  "workspace.reconnectHint": "Your conversation is unchanged. Reconnect its website before sending another message.",
+  "scope.workspaceChanged": "This conversation’s website tab changed. Reconnect the website from the project chat before sending."
 }

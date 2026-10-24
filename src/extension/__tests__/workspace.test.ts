@@ -16,7 +16,7 @@ import { collectProjectEvidence } from '../workspace-evidence';
 import type { RunManager } from '../run-manager';
 import type { Conversation } from '@src/store/types';
 
-const manager = { isRunning: vi.fn(() => false) } as unknown as RunManager;
+const manager = { isRunning: vi.fn(() => false), workspaceChanged: vi.fn(async () => {}) } as unknown as RunManager;
 const project = () =>
   saveProject({
     name: 'Investigation',

@@ -579,5 +579,17 @@
   "workspace.previewTruncated": "预览显示前 100,000 个字符。下载文件可查看完整内容。",
   "workspace.pdfStored": "原始文件已保存，无法提取文本。",
   "workspace.pdfTruncated": "PDF 文本仅部分提取；下载原件可查看其余页面。",
-  "workspace.contextHint": "目标和指令会应用于会话。笔记保留在工作区，除非你主动分享。"
+  "workspace.contextHint": "目标和指令会应用于会话。笔记保留在工作区，除非你主动分享。",
+  "workspace.chat": "聊天",
+  "workspace.openChat": "打开聊天",
+  "workspace.showWebsite": "打开网站和侧边栏聊天",
+  "workspace.chatHint": "在项目工作区打开此对话，不会启动任务。",
+  "workspace.currentChat": "当前对话",
+  "workspace.linkChat": "将此对话移入此项目",
+  "workspace.chatLinked": "对话已关联到此项目。",
+  "workspace.filesAttached": "文件已添加到此对话。在下方发送消息以继续。",
+  "workspace.disconnected": "网站标签页已断开连接",
+  "workspace.reconnect": "重新连接网站",
+  "workspace.reconnectHint": "对话保持不变。请重新连接网站后再发送消息。",
+  "scope.workspaceChanged": "此对话的网站标签页已更改。请在项目聊天中重新连接网站后再发送消息。"
 }
