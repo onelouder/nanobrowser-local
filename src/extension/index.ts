@@ -1,5 +1,6 @@
 // The product's wiring in the service worker. Listener registration stays synchronous at worker start.
 import './panel';
+import { requestLocalFiles } from './local-files';
 import { addFirstShortcuts } from './first-run';
 import { listenForPanels } from './panel-port';
 import { RunManager } from './run-manager';
@@ -17,6 +18,13 @@ export const runManager = new RunManager();
 listenForPanels(runManager);
 listenForSelections(runManager);
 listenForWorkspace(runManager);
+chrome.runtime.onMessage.addListener((message: unknown, sender, reply) => {
+  if ((message as { type?: string })?.type !== 'nb-local-files-status') return;
+  const extensionRoot = chrome.runtime.getURL('/');
+  if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(extensionRoot)) return;
+  void requestLocalFiles({ op: 'status' }).then(reply);
+  return true;
+});
 // The watchdog alarm only wakes the worker; starting it is what restores an unfinished run.
 // The welcome page and the first shortcut on install. Unattended check builds are installed on every run, so they
 // skip both.

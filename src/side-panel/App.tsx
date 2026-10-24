@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import { capabilityOf, DEFAULT_SETTINGS, keysStorage, providersStorage, settingsStorage } from '@src/store/settings';
 import type { ProviderConfig } from '@src/store/settings';
-import type { LivePair, ModelRef, PermissionMode } from '@src/store/types';
+import type { LivePair, ModelRef, PermissionMode, Project } from '@src/store/types';
 import { makePair } from '@src/llm/profiles';
 import type { ReasoningEffort } from '@src/llm/catalogue';
 import { useStorage } from '@src/ui/hooks';
@@ -37,7 +37,9 @@ import { AutoNotice } from '@src/ui/auto-notice';
 import { HistoryIcon, LogoMark, NewChatIcon, SettingsIcon } from '@src/ui/icons';
 import { websiteUrl } from '@src/ui/links';
 import { requestWorkspace } from '@src/ui/workspace-protocol';
-import type { WorkspaceProject } from '@src/ui/workspace-protocol';
+import type { WorkspaceList } from '@src/ui/workspace-protocol';
+import { Select } from '@src/ui/components';
+import { LocalFilesButton } from '@src/ui/local-files';
 
 const NO_PROVIDERS: ProviderConfig[] = [];
 const NO_KEYS: Record<string, string> = {};
@@ -436,8 +438,14 @@ export function App({
           <SettingsIcon />
         </IconButton>
       </header>
-      {!session && conversation?.projectId ? (
-        <ProjectBadge projectId={conversation.projectId} conversationId={conversation.id} />
+      <LocalFilesButton />
+      {!session ? (
+        <ChatProject
+          key={state.conversationId}
+          projectId={conversation?.projectId ?? null}
+          conversationId={state.conversationId}
+          active={active}
+        />
       ) : null}
       {confirmNewChat ? (
         <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
@@ -666,28 +674,83 @@ function openWorkspace(conversationId: string | null, resume = false): void {
   void chrome.tabs.create({ url: chrome.runtime.getURL(`/workspace.html${query}`) });
 }
 
-function ProjectBadge({ projectId, conversationId }: { projectId: string; conversationId: string }) {
-  const [name, setName] = useState('');
+function ChatProject({
+  projectId,
+  conversationId,
+  active,
+}: {
+  projectId: string | null;
+  conversationId: string | null;
+  active: boolean;
+}) {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
   useEffect(() => {
     let current = true;
-    void requestWorkspace<WorkspaceProject>({ op: 'project', projectId })
-      .then(result => {
-        if (current) setName(result.project.name);
-      })
-      .catch(() => {
-        if (current) setName('');
-      });
+    const refresh = () => {
+      void requestWorkspace<WorkspaceList>({ op: 'list' })
+        .then(result => {
+          if (current) setProjects(result.projects);
+        })
+        .catch(cause => {
+          if (current) setError(cause instanceof Error ? cause.message : String(cause));
+        });
+    };
+    refresh();
+    window.addEventListener('focus', refresh);
     return () => {
       current = false;
+      window.removeEventListener('focus', refresh);
     };
   }, [projectId]);
+  const assign = async (nextProjectId: string) => {
+    if (!conversationId) return;
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await requestWorkspace({ op: 'assign', conversationId, projectId: nextProjectId || null });
+      setSaved(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const project = projects.find(item => item.id === projectId);
   return (
-    <button
-      type="button"
-      onClick={() => openWorkspace(conversationId)}
-      className="truncate border-b border-nb-border/60 px-3 py-1 text-left text-xs text-nb-muted">
-      {t('workspace.savedProject')}: {name || t('workspace.title')}
-    </button>
+    <div className="flex flex-col gap-1 border-b border-nb-border/60 px-3 py-2 text-xs text-nb-muted">
+      <button
+        type="button"
+        onClick={() => openWorkspace(conversationId)}
+        className="truncate text-left hover:underline">
+        {t('workspace.savedProject')}: {projectId ? project?.name || t('workspace.title') : t('workspace.noProject')}
+      </button>
+      <Select
+        aria-label={t('workspace.chatProject')}
+        value={projectId ?? ''}
+        disabled={!conversationId || active || busy}
+        onChange={e => void assign(e.target.value)}>
+        <option value="">{t('workspace.noProject')}</option>
+        {projects
+          .filter(item => !item.archived || item.id === projectId)
+          .map(item => (
+            <option key={item.id} value={item.id} disabled={item.archived}>
+              {item.name}
+            </option>
+          ))}
+      </Select>
+      {!conversationId ? <p>{t('workspace.saveChatFirst')}</p> : null}
+      {active ? <p>{t('workspace.pauseToLink')}</p> : null}
+      {error ? (
+        <p role="alert" className="text-red-700 dark:text-red-300">
+          {error}
+        </p>
+      ) : null}
+      {saved ? <p role="status">{t('workspace.projectUpdated')}</p> : null}
+    </div>
   );
 }
 

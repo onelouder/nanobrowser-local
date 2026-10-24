@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { cp, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { defineConfig } from 'wxt';
 import react from '@vitejs/plugin-react-swc';
@@ -40,6 +40,12 @@ export default defineConfig({
     exclude: ['**/*.map'],
   },
   hooks: {
+    'build:done': async wxt => {
+      await cp('native-files', resolve(wxt.config.outDir, 'native-files'), {
+        recursive: true,
+        filter: source => !source.endsWith('.test.mjs'),
+      });
+    },
     'zip:extension:start': () => mkdir('dist-zip', { recursive: true }).then(() => {}),
     'config:resolved': wxt => {
       // WXT 0.21.4 still installs Unimport's Vite plugin with imports: false; clear its presets.

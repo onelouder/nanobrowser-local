@@ -101,6 +101,21 @@ describe('the ledger', () => {
     expect(JSON.stringify(lines)).not.toContain('IGNORE');
   });
 
+  it('retains root and path for local writes so same-named files remain distinct after resume', () => {
+    const branch = [
+      user('Update both stylesheets'),
+      reply(['a', 'write_file', { root: 'downloads', path: 'clone/styles.css' }]),
+      res('a', 'write_file', '{"ok":true}'),
+      reply(['b', 'write_file', { root: 'documents', path: 'clone/styles.css' }]),
+      res('b', 'write_file', 'error FILE_WRITE_UNKNOWN\nThe write outcome is unknown.', undefined, true),
+    ];
+    const groups = unitsOf(branch as Array<EntryOf<'message'>>).filter(unit => unit.kind === 'group');
+    expect(ledgerLines(groups, turnsOf(branch)).map(line => [line.kind, line.text])).toEqual([
+      ['file', 'write_file «downloads/clone/styles.css»'],
+      ['file', 'write_file «documents/clone/styles.css»: FILE_WRITE_UNKNOWN'],
+    ]);
+  });
+
   it('merges the oldest reads and moves into one count per tab, and never a write or an unverified action', () => {
     const lines: LedgerLine[] = [
       ...Array.from({ length: 30 }, (_, i): LedgerLine => ({

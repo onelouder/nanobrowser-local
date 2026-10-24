@@ -6,21 +6,92 @@ import { requestWorkspace } from '@src/ui/workspace-protocol';
 
 export type RunAction = (operation: () => Promise<void>) => Promise<void>;
 
+export function LinkChat({
+  project,
+  sessions,
+  projects,
+  selectedId,
+  busy,
+  run,
+  onLinked,
+  onNewChat,
+  showHint,
+}: {
+  project: Project;
+  sessions: Conversation[];
+  projects: Project[];
+  selectedId: string | null;
+  busy: boolean;
+  run: RunAction;
+  onLinked: (id: string) => Promise<void>;
+  onNewChat: () => void;
+  showHint: boolean;
+}) {
+  const [chosenId, setChosenId] = useState(selectedId ?? '');
+  const available = sessions.filter(session => session.projectId !== project.id);
+  const selected = available.find(session => session.id === chosenId);
+  const active = selected?.status === 'running' || selected?.status === 'awaiting_user';
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-nb-border bg-nb-bg p-3 text-sm">
+      {showHint ? <p className="text-nb-muted">{t('workspace.sessionChatHint')}</p> : null}
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label={t('workspace.existingChat')}>
+          <Select
+            aria-label={t('workspace.existingChat')}
+            value={selected?.id ?? ''}
+            disabled={busy || project.archived || !available.length}
+            onChange={event => setChosenId(event.target.value)}>
+            <option value="">{t(available.length ? 'workspace.chooseChat' : 'workspace.noOtherChats')}</option>
+            {available.map(session => (
+              <option key={session.id} value={session.id}>
+                {session.title} —{' '}
+                {projects.find(item => item.id === session.projectId)?.name ?? t('workspace.noProject')}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Button
+          disabled={busy || project.archived || !selected || active}
+          onClick={() => {
+            if (!selected) return;
+            void run(async () => {
+              await requestWorkspace({ op: 'assign', conversationId: selected.id, projectId: project.id });
+              await onLinked(selected.id);
+            });
+          }}>
+          {t('workspace.linkExistingChat')}
+        </Button>
+        <Button disabled={busy || project.archived} onClick={onNewChat}>
+          {t('workspace.newProjectChat')}
+        </Button>
+      </div>
+      {active ? <p className="text-nb-muted">{t('workspace.pauseToLink')}</p> : null}
+    </div>
+  );
+}
+
 export function NewSession({
   projectId,
   busy,
   run,
   onCreated,
+  expanded,
+  onExpandedChange,
 }: {
   projectId: string;
   busy: boolean;
   run: RunAction;
   onCreated: (id: string) => void;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }) {
   const [title, setTitle] = useState('');
   const [objective, setObjective] = useState('');
   return (
-    <details className="rounded-xl border border-nb-border bg-nb-bg p-4">
+    <details
+      open={expanded}
+      onToggle={event => onExpandedChange(event.currentTarget.open)}
+      className="rounded-xl border border-nb-border bg-nb-bg p-4">
       <summary className="cursor-pointer font-medium">{t('workspace.newSession')}</summary>
       <form
         className="mt-4 flex flex-col gap-3"

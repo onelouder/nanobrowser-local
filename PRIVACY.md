@@ -10,7 +10,7 @@ Nanobrowser is licensed under the Apache License 2.0. All source code is public 
 
 ## What stays in your browser
 
-- Nanobrowser runs entirely in your browser. There is no Nanobrowser server, and no account.
+- Nanobrowser runs in your browser, with an optional local helper for Downloads and Documents access. There is no Nanobrowser server, and no account.
 - Your projects, conversations, checkpoints, execution history, retained evidence and files, saved workflows, custom instructions, site notes, site settings and other settings are stored locally in your browser.
 - PDF text is extracted locally in a bundled worker. The original PDF and its extracted text stay in browser storage until their conversation or project copy is deleted. Scanned pages are not sent to an OCR service.
 - Your logins and cookies never leave your browser through Nanobrowser.
@@ -24,11 +24,19 @@ This local-inference fork disables analytics and the uninstall survey. It does n
 
 To work, Nanobrowser sends data directly from your browser to the AI providers you set up, and only to them:
 
-- **Your model provider** (for example Anthropic, OpenAI, Google, OpenRouter, or a local server such as Ollama): your messages, text and image attachments, extracted PDF text, custom instructions, project objectives and instructions, explicitly selected project evidence, applicable site notes and selected workflow text, the content of the tabs the agent works in, and, for models that can see images, screenshots of those tabs.
+- **Your model provider** (for example Anthropic, OpenAI, Google, OpenRouter, or a local server such as Ollama): your messages, local file names and content read by the agent, text and image attachments, extracted PDF text, custom instructions, project objectives and instructions, explicitly selected project evidence, applicable site notes and selected workflow text, the content of the tabs the agent works in, and, for models that can see images, screenshots of those tabs.
 - **Sites you upload to** receive the original attached file when you ask the agent to upload it, subject to your permission settings. PDF extraction does not upload the original document to your model provider.
 - **Your voice model provider** (OpenAI or Google), only if you turn on voice input: the audio of each recording. Recordings are not kept.
 
 How these providers handle your data is governed by their own privacy policies. If you use a local model server, requests go to that server, including when it runs on another computer on your network.
+
+## Direct local file access
+
+- After you install the helper and grant native messaging permission, every chat can list and read files in your Downloads and Documents folders. No project or attachment selection is needed.
+- The helper uses local standard input/output with Chrome or Edge. It opens no network listener and accepts connections only from the extension IDs registered during installation.
+- Reads enter the conversation and are sent to the model provider you selected. File content is treated as untrusted data. Ask mode confirms writes; Auto mode allows direct writes. Existing files require an explicit overwrite request.
+- Files written by the helper are ordinary files on your computer. Deleting chats, clearing browser data, or uninstalling the extension does not delete those files or uninstall the helper.
+- Access is restricted to Downloads and Documents; symbolic links and hard-linked files are not followed. Revoking the extension's native messaging permission disables helper access.
 
 ## Project transfers
 

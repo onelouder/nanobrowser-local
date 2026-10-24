@@ -81,6 +81,7 @@ const WRITE_TITLES: Record<string, MessageKey> = {
 function WriteCard({ prompt, answer }: { prompt: OpenPrompt; answer: (a: unknown) => void }) {
   const d = prompt.data;
   const site = plain(d.site);
+  const localFile = d.category === 'local-file';
   const canRemember = !!d.canRemember;
   return (
     <Frame
@@ -98,7 +99,7 @@ function WriteCard({ prompt, answer }: { prompt: OpenPrompt; answer: (a: unknown
       <Line>
         {plain(d.action)} {plain(d.target)}
       </Line>
-      <Line>{t('card.onSite', { site: site || t('card.noSite') })}</Line>
+      {!localFile ? <Line>{t('card.onSite', { site: site || t('card.noSite') })}</Line> : null}
       {d.frameHost ? <Line muted>{t('card.frameHost', { host: plain(d.frameHost) })}</Line> : null}
       {d.destinationHost ? <Line muted>{t('card.destinationHost', { host: plain(d.destinationHost) })}</Line> : null}
       {d.intent ? <Line muted>{t('card.agentPurpose', { purpose: plain(d.intent) })}</Line> : null}
@@ -116,9 +117,11 @@ function WriteCard({ prompt, answer }: { prompt: OpenPrompt; answer: (a: unknown
         <button type="button" className={secondary} onClick={() => answer('decline')}>
           {t('card.decline')}
         </button>
-        <button type="button" className={link} onClick={() => showTab(prompt.tabId)}>
-          {t('card.showTab')}
-        </button>
+        {!localFile ? (
+          <button type="button" className={link} onClick={() => showTab(prompt.tabId)}>
+            {t('card.showTab')}
+          </button>
+        ) : null}
       </Buttons>
     </Frame>
   );

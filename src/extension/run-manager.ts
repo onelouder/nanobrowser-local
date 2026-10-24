@@ -57,6 +57,8 @@ import { notifyFinished, notifyNeeds } from './notify';
 import { thumbnail } from './thumbnail';
 import { isNumberedCopy, saveText } from './downloads';
 import { checkSave } from '@src/agent/save-file';
+import { isLocalFileTool } from '@src/agent/local-files';
+import { runLocalFileTool } from './local-files';
 import { conversationMarkdown, exportName } from '@src/agent/export';
 import { isBlockedSite, quote } from '@src/browser-control';
 import { clearShortcuts, isStartUrl } from '@src/store/shortcuts';
@@ -1307,6 +1309,13 @@ export class RunManager {
     call: ToolCallRequest,
     signal: AbortSignal,
   ): Promise<{ text: string; isError: boolean }> {
+    if (isLocalFileTool(call.toolName)) {
+      return runLocalFileTool(call, {
+        signal,
+        mode: this.#modes.get(conversationId) ?? 'ask',
+        confirm: data => this.broker.open<string>(conversationId, 'write-card', data, signal),
+      });
+    }
     if (call.toolName !== 'save_file') return { text: `error: ${call.toolName} is not available.`, isError: true };
     const args = (call.input ?? {}) as Record<string, unknown>;
     const check = checkSave(args);

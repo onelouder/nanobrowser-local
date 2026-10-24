@@ -56,7 +56,7 @@ export function Chat({
         </Button>
       </div>
       {error ? <Notice tone="error">{error}</Notice> : null}
-      <div className="h-[calc(100vh-22rem)] min-h-96 overflow-hidden rounded-xl border border-nb-border bg-nb-bg">
+      <div className="h-[calc(100vh-29rem)] min-h-64 overflow-hidden rounded-xl border border-nb-border bg-nb-bg">
         {binding ? (
           <ConversationChat
             session={binding}

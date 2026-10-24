@@ -37,6 +37,7 @@ import './model-config';
 import './inference-controls';
 import './workspace';
 import './workspace-chat';
+import './local-files';
 import './model-picker';
 import './llm-live';
 import './canary-sweep';
