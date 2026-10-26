@@ -93,6 +93,9 @@ describe('factsFrom', () => {
         max_context_length: 32_768,
       }),
     ).toEqual({ contextWindow: 32_768, vision: false });
+    expect(factsFrom({ id: 'dsv4-agent', object: 'model', max_model_len: 1_048_576 })).toEqual({
+      contextWindow: 1_048_576,
+    });
   });
 
   it("reads Ollama's capabilities and LM Studio's type", () => {

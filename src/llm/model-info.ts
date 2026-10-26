@@ -37,6 +37,7 @@ export function factsFrom(record: Json): ApiFacts {
     record.context_window,
     record.context_length,
     record.max_context_length,
+    record.max_model_len, // vLLM, SGLang and the local inference proxy
   );
   if (contextWindow) facts.contextWindow = contextWindow;
   const maxOutput = positive(
